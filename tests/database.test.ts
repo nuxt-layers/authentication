@@ -1,0 +1,410 @@
+import { generateKeyPairSync } from 'node:crypto'
+import pg from 'pg'
+import { getMigrations } from 'better-auth/db/migration'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { resolveAuthenticationPolicy } from '../contracts'
+import { AUTHENTICATION_MIGRATIONS, quoteSchema, runAuthenticationMigrations } from '../server/database/migrations'
+import { createBreakGlassAccounts, enrolmentTokenDigest } from '../server/internal/break-glass'
+import { buildEngineOptions } from '../server/internal/engine-options'
+import { createCredentialRecoveries } from '../server/internal/recovery'
+import { createRetention } from '../server/internal/retention'
+import { parsePublicKey } from '../server/internal/client-assertion'
+import { createServiceCredentials, ServiceCredentialLimit } from '../server/internal/service-credentials'
+import { accountKey, clientKey, createSignInThrottle } from '../server/internal/throttle'
+import { createTestDatabase, hasDatabase, requireDatabaseInCi } from './support/database'
+
+requireDatabaseInCi()
+
+describe.skipIf(!hasDatabase)('authentication database', () => {
+  let pool: pg.Pool
+  let drop: () => Promise<void>
+
+  beforeAll(async () => {
+    const database = await createTestDatabase()
+    drop = database.drop
+    pool = new pg.Pool({ connectionString: database.url })
+  })
+
+  afterAll(async () => {
+    await pool?.end()
+    await drop?.()
+  })
+
+  it('applies every migration once, even when instances race', async () => {
+    const results = await Promise.all([
+      runAuthenticationMigrations(pool, 'authentication'),
+      runAuthenticationMigrations(pool, 'authentication'),
+    ])
+    expect(results.flat()).toEqual(AUTHENTICATION_MIGRATIONS.map(m => m.id))
+    expect(await runAuthenticationMigrations(pool, 'authentication')).toEqual([])
+  })
+
+  it('creates every table inside the capability-owned schema only', async () => {
+    const { rows } = await pool.query(
+      `select table_schema, table_name from information_schema.tables where table_schema not in ('pg_catalog', 'information_schema') order by table_name`,
+    )
+    expect(rows.every(row => row.table_schema === 'authentication')).toBe(true)
+    expect(rows.map(row => row.table_name)).toEqual(['account', 'break_glass_account', 'break_glass_enrolment', 'credential_recovery', 'passkey', 'schema_migration', 'service_assertion', 'service_credential', 'service_token', 'session', 'sign_in_throttle', 'totp_last_step', 'twoFactor', 'user', 'verification'])
+  })
+
+  it('blanks names and pictures stored by earlier releases (0003)', async () => {
+    await pool.query(`insert into "authentication"."user" ("id", "name", "email", "emailVerified", "image") values ('legacy-federated', 'Alice Example', 'legacy@example.test', true, 'https://idp.example.test/alice.png'), ('legacy-email', '', 'plain@example.test', true, null)`)
+    const migration = AUTHENTICATION_MIGRATIONS.find(m => m.id === '0003_no_names_or_images')!
+    await pool.query(migration.sql.replaceAll('{{schema}}', quoteSchema('authentication')))
+    const { rows } = await pool.query(`select "id", "name", "image" from "authentication"."user" where "id" like 'legacy-%' order by "id"`)
+    expect(rows).toEqual([
+      { id: 'legacy-email', name: '', image: null },
+      { id: 'legacy-federated', name: '', image: null },
+    ])
+    await pool.query(`delete from "authentication"."user" where "id" like 'legacy-%'`)
+  })
+
+  it('matches the engine schema exactly (drift check on engine upgrades)', async () => {
+    const options = buildEngineOptions({
+      pool,
+      schema: 'authentication',
+      secret: 'x'.repeat(40),
+      baseUrl: 'http://localhost:3000',
+      appName: 'Test',
+      policy: resolveAuthenticationPolicy(),
+    })
+    const pending = await getMigrations(options)
+    expect(pending.toBeCreated).toEqual([])
+    expect(pending.toBeAdded).toEqual([])
+    expect(pending.toBeAddedIndexes).toEqual([])
+    expect(pending.unsafeChanges).toEqual([])
+    expect(pending.schemaProblems).toEqual([])
+  })
+
+  it('migrates as a least-privilege role that owns only its schema', async () => {
+    const role = `authentication_app_${Date.now()}`
+    await pool.query(`create role "${role}" login password 'test'`)
+    await pool.query(`create schema "auth_owned" authorization "${role}"`)
+    await pool.query(`revoke all on schema public from "${role}"`)
+    const url = new URL(pool.options.connectionString!)
+    url.username = role
+    url.password = 'test'
+    const restricted = new pg.Pool({ connectionString: url.toString() })
+    try {
+      expect(await runAuthenticationMigrations(restricted, 'auth_owned')).toEqual(AUTHENTICATION_MIGRATIONS.map(m => m.id))
+      await expect(restricted.query('create table public.intruder (id int)')).rejects.toThrow(/permission denied/)
+      await expect(restricted.query('create schema elsewhere')).rejects.toThrow(/permission denied/)
+    }
+    finally {
+      await restricted.end()
+      await pool.query(`drop schema "auth_owned" cascade`)
+      await pool.query(`drop role "${role}"`)
+    }
+  })
+
+  it('supports a host-chosen schema name and rejects unsafe ones', async () => {
+    expect(await runAuthenticationMigrations(pool, 'auth_alt')).toEqual(AUTHENTICATION_MIGRATIONS.map(m => m.id))
+    expect(() => quoteSchema('auth"; drop schema public; --')).toThrow(TypeError)
+  })
+
+  describe('credential recovery records', () => {
+    it('keeps each principal\'s latest recovery, never moving it back', async () => {
+      await pool.query(`insert into "authentication"."user" ("id", "name", "email", "emailVerified") values ('recovered-a', '', 'a@recovery.test', true), ('recovered-b', '', 'b@recovery.test', true)`)
+      const recoveries = createCredentialRecoveries(pool, 'authentication')
+      await recoveries.record('recovered-a', 'password-reset', new Date('2026-10-01T10:00:00Z'))
+      await recoveries.record('recovered-a', 'backup-code', new Date('2026-10-01T09:00:00Z'))
+      expect(await recoveries.get('recovered-a')).toEqual({ principalId: 'recovered-a', recoveredAt: '2026-10-01T10:00:00.000Z', method: 'password-reset' })
+      await recoveries.record('recovered-a', 'backup-code', new Date('2026-10-02T10:00:00Z'))
+      expect(await recoveries.get('recovered-a')).toMatchObject({ recoveredAt: '2026-10-02T10:00:00.000Z', method: 'backup-code' })
+      expect(await recoveries.get('recovered-b')).toBeNull()
+    })
+
+    it('pages through recoveries in order, with a cursor that names nobody', async () => {
+      const recoveries = createCredentialRecoveries(pool, 'authentication')
+      await recoveries.record('recovered-b', 'password-reset', new Date('2026-10-03T10:00:00Z'))
+      const first = await recoveries.list({ limit: 1 })
+      expect(first.recoveries.map(r => r.principalId)).toEqual(['recovered-a'])
+      expect(Buffer.from(first.next!, 'base64url').toString()).not.toMatch(/@/)
+      const second = await recoveries.list({ after: first.next, limit: 1 })
+      expect(second.recoveries.map(r => r.principalId)).toEqual(['recovered-b'])
+      expect(second.next).toBeNull()
+      expect((await recoveries.list({ after: second.next ?? undefined })).recoveries).toHaveLength(2)
+      await expect(recoveries.list({ after: 'not-a-cursor' })).rejects.toThrow(TypeError)
+    })
+
+    it('forgets a principal\'s recoveries with the account', async () => {
+      await pool.query(`delete from "authentication"."user" where "id" like 'recovered-%'`)
+      expect((await createCredentialRecoveries(pool, 'authentication').list()).recoveries).toEqual([])
+    })
+  })
+
+  describe('break-glass enrolment tokens', () => {
+    const secret = 'database-test-secret-that-is-long-enough-0123'
+    const at = (iso: string) => new Date(iso)
+
+    it('keeps at most one outstanding token per account, stored only as a keyed digest', async () => {
+      await pool.query(`insert into "authentication"."user" ("id", "name", "email", "emailVerified") values ('glass-a', '', 'a@glass.test', true), ('glass-b', '', 'b@glass.test', true)`)
+      const accounts = createBreakGlassAccounts(pool, 'authentication', secret)
+      await accounts.register('glass-a', at('2026-10-01T10:00:00Z'))
+      expect(await accounts.is('glass-a')).toBe(true)
+      expect(await accounts.is('glass-b')).toBe(false)
+      const first = await accounts.issue('glass-a', at('2026-10-01T11:00:00Z'))
+      const second = await accounts.issue('glass-a', at('2026-10-01T11:00:00Z'))
+      const { rows } = await pool.query(`select "token_digest" from "authentication"."break_glass_enrolment" where "user_id" = 'glass-a'`)
+      expect(rows).toEqual([{ token_digest: enrolmentTokenDigest(secret, second) }])
+      expect(rows[0].token_digest).not.toContain(second)
+      const now = at('2026-10-01T10:30:00Z')
+      expect(await accounts.live(first, now)).toBeNull()
+      expect(await accounts.live(second, now)).toBe('glass-a')
+      // Another secret derives another digest: the token is useless without the layer's secret.
+      expect(await createBreakGlassAccounts(pool, 'authentication', `${secret}-other`).live(second, now)).toBeNull()
+    })
+
+    it('expires a token by the time it is given', async () => {
+      const accounts = createBreakGlassAccounts(pool, 'authentication', secret)
+      const token = await accounts.issue('glass-a', at('2026-10-01T11:00:00Z'))
+      expect(await accounts.live(token, at('2026-10-01T10:59:59Z'))).toBe('glass-a')
+      expect(await accounts.live(token, at('2026-10-01T11:00:00Z'))).toBeNull()
+      expect(await accounts.challenge(token, 'challenge', at('2026-10-01T11:00:01Z'))).toBeNull()
+      expect(await accounts.consume(token, 'glass-a', at('2026-10-01T11:00:01Z'))).toBe(false)
+    })
+
+    it('hands out each challenge once, and consumes a token once', async () => {
+      const accounts = createBreakGlassAccounts(pool, 'authentication', secret)
+      const now = at('2026-10-01T10:30:00Z')
+      const token = await accounts.issue('glass-a', at('2026-10-01T11:00:00Z'))
+      expect(await accounts.takeChallenge(token, now)).toBeNull()
+      expect(await accounts.challenge(token, 'first', now)).toBe('glass-a')
+      expect(await accounts.challenge(token, 'second', now)).toBe('glass-a')
+      expect(await accounts.takeChallenge(token, now)).toEqual({ principalId: 'glass-a', challenge: 'second' })
+      expect(await accounts.takeChallenge(token, now)).toBeNull()
+      expect(await accounts.consume(token, 'glass-b', now)).toBe(false)
+      expect(await accounts.consume(token, 'glass-a', now)).toBe(true)
+      expect(await accounts.consume(token, 'glass-a', now)).toBe(false)
+      expect(await accounts.live(token, now)).toBeNull()
+    })
+
+    it('rejects anything but a digest, and forgets the account with its user', async () => {
+      await expect(pool.query(`insert into "authentication"."break_glass_enrolment" ("user_id", "token_digest", "expires_at") values ('glass-a', 'plain-token', now())`)).rejects.toThrow(/check constraint/)
+      await pool.query(`delete from "authentication"."user" where "id" like 'glass-%'`)
+      expect((await pool.query(`select 1 from "authentication"."break_glass_account"`)).rows).toHaveLength(0)
+    })
+  })
+
+  describe('retention schedules', () => {
+    const at = new Date('2027-06-01T00:00:00Z')
+    const daysBefore = (days: number) => new Date(at.getTime() - days * 86_400_000)
+    const retention = resolveAuthenticationPolicy().retention
+    const ids = async (table: string, column: string) =>
+      (await pool.query(`select ${column} as id from "authentication".${table} order by 1`)).rows.map(row => row.id)
+
+    beforeAll(async () => {
+      await pool.query(`insert into "authentication"."user" ("id", "name", "email", "emailVerified") values ('kept-a', '', 'a@kept.test', true), ('kept-b', '', 'b@kept.test', true), ('kept-c', '', 'c@kept.test', true)`)
+      await pool.query(`insert into "authentication"."break_glass_account" ("user_id", "provisioned_at") values ('kept-a', $1), ('kept-b', $1)`, [daysBefore(400)])
+      const sessions: [string, Date][] = [['old', daysBefore(91)], ['recent', daysBefore(89)], ['live', new Date(at.getTime() + 3_600_000)]]
+      for (const [id, expiresAt] of sessions) {
+        await pool.query(`insert into "authentication"."session" ("id", "expiresAt", "token", "updatedAt", "userId") values ($1, $2, $1, $2, 'kept-a')`, [`session-${id}`, expiresAt])
+        await pool.query(`insert into "authentication"."verification" ("id", "identifier", "value", "expiresAt") values ($1, 'challenge', 'value', $2)`, [`verification-${id}`, new Date(expiresAt.getTime() + 60 * 86_400_000)])
+      }
+      await pool.query(`insert into "authentication"."break_glass_enrolment" ("user_id", "token_digest", "expires_at") values ('kept-a', $1, $2), ('kept-b', $3, $4)`, ['a'.repeat(64), daysBefore(31), 'b'.repeat(64), daysBefore(29)])
+      const recoveries = createCredentialRecoveries(pool, 'authentication')
+      await recoveries.record('kept-a', 'password-reset', daysBefore(366))
+      await recoveries.record('kept-b', 'backup-code', daysBefore(366))
+      await recoveries.record('kept-c', 'password-reset', daysBefore(364))
+    })
+
+    afterAll(async () => {
+      await pool.query(`delete from "authentication"."user" where "id" like 'kept-%'`)
+      await pool.query(`delete from "authentication"."verification" where "id" like 'verification-%'`)
+    })
+
+    it('deletes expired sessions and tokens past their periods, and keeps every recovery record without the hold port', async () => {
+      const counts = await createRetention(pool, 'authentication').apply({ at, engineAt: at, retention, holds: null })
+      expect(counts).toEqual({ sessions: 1, credentialRecoveries: 0, enrolmentTokens: 1, verifications: 1, serviceTokens: 0, serviceCredentials: 0 })
+      expect(await ids('"session"', '"id"')).toEqual(['session-live', 'session-recent'])
+      expect(await ids('"verification"', '"id"')).toEqual(['verification-live', 'verification-recent'])
+      expect(await ids('"break_glass_enrolment"', '"user_id"')).toEqual(['kept-b'])
+      expect(await ids('"credential_recovery"', '"user_id"')).toEqual(['kept-a', 'kept-b', 'kept-c'])
+    })
+
+    it('keeps a held person\'s recovery record, and one the port cannot answer for, until the next run', async () => {
+      const asked: unknown[] = []
+      const holds = {
+        async covers(subject: { kind: 'person', id: string }) {
+          asked.push(subject)
+          if (subject.id === 'kept-b') throw new Error('Profile unavailable')
+          return subject.id === 'kept-a'
+        },
+      }
+      const retentionRun = createRetention(pool, 'authentication')
+      expect(await retentionRun.apply({ at, engineAt: at, retention, holds })).toEqual({ sessions: 0, credentialRecoveries: 0, enrolmentTokens: 0, verifications: 0, serviceTokens: 0, serviceCredentials: 0 })
+      expect(asked).toEqual([{ kind: 'person', id: 'kept-a' }, { kind: 'person', id: 'kept-b' }])
+      expect(await ids('"credential_recovery"', '"user_id"')).toEqual(['kept-a', 'kept-b', 'kept-c'])
+
+      // The hold on kept-a ends and the port answers again: both go; kept-c is still within its period.
+      expect(await retentionRun.apply({ at, engineAt: at, retention, holds: { covers: async () => false } }))
+        .toEqual({ sessions: 0, credentialRecoveries: 2, enrolmentTokens: 0, verifications: 0, serviceTokens: 0, serviceCredentials: 0 })
+      expect(await ids('"credential_recovery"', '"user_id"')).toEqual(['kept-c'])
+    })
+
+    it('judges sessions and verification values by the engine\'s clock, never a host clock ahead of it', async () => {
+      await pool.query(`insert into "authentication"."session" ("id", "expiresAt", "token", "updatedAt", "userId") values ('session-engine', $1, 'session-engine', $1, 'kept-a')`, [daysBefore(1)])
+      const ahead = new Date(at.getTime() + 400 * 86_400_000)
+      const counts = await createRetention(pool, 'authentication').apply({ at: ahead, engineAt: at, retention, holds: null })
+      expect(counts).toMatchObject({ sessions: 0, verifications: 0 })
+      expect(await ids('"session"', '"id"')).toContain('session-engine')
+    })
+
+    it('keeps a record recovered again since the run read it', async () => {
+      const recoveries = createCredentialRecoveries(pool, 'authentication')
+      await recoveries.record('kept-a', 'backup-code', daysBefore(400))
+      const holds = {
+        async covers() {
+          await recoveries.record('kept-a', 'password-reset', at)
+          return false
+        },
+      }
+      expect((await createRetention(pool, 'authentication').apply({ at, engineAt: at, retention, holds })).credentialRecoveries).toBe(0)
+      expect(await recoveries.get('kept-a')).toMatchObject({ recoveredAt: at.toISOString() })
+    })
+  })
+
+  describe('service credentials', () => {
+    const secret = 'service-test-secret-that-is-long-enough-0123456789'
+    const at = new Date('2027-01-01T00:00:00Z')
+    const later = (days: number) => new Date(at.getTime() + days * 86_400_000)
+    const store = () => createServiceCredentials(pool, 'authentication', secret)
+    const publicKey = () => parsePublicKey(generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }))!
+
+    it('stores a secret only as its keyed digest, and authenticates it for its own identity only', async () => {
+      const issued = await store().issueSecret('service-a', at, later(90))
+      expect(issued.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(issued.credential).toMatchObject({ identityId: 'service-a', kind: 'secret', keyThumbprint: null, lastUsedAt: null, expiresAt: later(90).toISOString() })
+      const { rows } = await pool.query(`select * from "authentication"."service_credential" where "credential_id" = $1`, [issued.credential.credentialId])
+      expect(JSON.stringify(rows)).not.toContain(issued.clientSecret)
+      expect(rows[0].secret_digest).toMatch(/^[0-9a-f]{64}$/)
+      expect((await store().authenticateSecret('service-a', issued.clientSecret!, at))?.credentialId).toBe(issued.credential.credentialId)
+      expect(await store().authenticateSecret('service-b', issued.clientSecret!, at)).toBeNull()
+      expect(await store().authenticateSecret('service-a', 'B'.repeat(43), at)).toBeNull()
+      expect(await store().authenticateSecret('service-a', issued.clientSecret!, later(91))).toBeNull()
+    })
+
+    it('keeps at most two active credentials, counted under a lock, and the same key once', async () => {
+      const key = publicKey()
+      const results = await Promise.allSettled([
+        store().registerKey('service-c', key, at, later(90)),
+        store().issueSecret('service-c', at, later(90)),
+        store().issueSecret('service-c', at, later(90)),
+      ])
+      expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(2)
+      expect(results.filter(result => result.status === 'rejected').map(result => (result as PromiseRejectedResult).reason)).toEqual([expect.any(ServiceCredentialLimit)])
+      const active = await store().list('service-c', at)
+      expect(active).toHaveLength(2)
+      const first = active[0]!
+      expect(await store().revoke('service-c', first.credentialId, at)).toMatchObject({ credentialId: first.credentialId })
+      expect(await store().revoke('service-c', first.credentialId, at)).toBeNull()
+      expect(await store().revoke('service-other', active[1]!.credentialId, at)).toBeNull()
+      // A credential past its expiry no longer counts.
+      expect((await store().list('service-c', later(91)))).toHaveLength(0)
+      const second = await store().registerKey('service-d', key, at, later(90))
+      expect(second.clientSecret).toBeNull()
+      await expect(store().registerKey('service-d', key, at, later(90))).rejects.toBeInstanceOf(ServiceCredentialLimit)
+    })
+
+    it('issues tokens stored as digests that end with their credential, and lets each assertion be used once', async () => {
+      const credentials = store()
+      const issued = await credentials.issueSecret('service-e', at, later(90))
+      const token = await credentials.issueToken(issued.credential, 'client-secret', at, new Date(at.getTime() + 900_000))
+      expect(JSON.stringify((await pool.query(`select * from "authentication"."service_token"`)).rows)).not.toContain(token.token)
+      expect(await credentials.resolveToken(token.token, at)).toMatchObject({ tokenId: token.tokenId, identityId: 'service-e', method: 'client-secret' })
+      expect(await credentials.resolveToken(token.token, new Date(at.getTime() + 900_000))).toBeNull()
+      expect((await credentials.list('service-e', at))[0]!.lastUsedAt).toBe(at.toISOString())
+
+      expect(await credentials.endTokens('service-e')).toBe(1)
+      expect(await credentials.resolveToken(token.token, at)).toBeNull()
+      const again = await credentials.issueToken(issued.credential, 'client-secret', at, new Date(at.getTime() + 900_000))
+      await credentials.revoke('service-e', issued.credential.credentialId, at)
+      expect(await credentials.resolveToken(again.token, at)).toBeNull()
+
+      expect(await credentials.rememberAssertion('service-e', 'jti-0123456789abcdef', later(1), at)).toBe(true)
+      expect(await credentials.rememberAssertion('service-e', 'jti-0123456789abcdef', later(1), at)).toBe(false)
+      expect(await credentials.rememberAssertion('service-f', 'jti-0123456789abcdef', later(1), at)).toBe(true)
+    })
+
+    it('warns once before expiry, ends expired credentials with their tokens, and forgets a closed identity', async () => {
+      const credentials = store()
+      const soon = await credentials.issueSecret('service-g', at, later(10))
+      await credentials.issueSecret('service-g', at, later(90))
+      expect((await credentials.warnExpiring(at, 14)).map(found => found.credentialId)).toEqual([soon.credential.credentialId])
+      expect(await credentials.warnExpiring(at, 14)).toEqual([])
+      const token = await credentials.issueToken(soon.credential, 'client-secret', at, later(11))
+      expect((await credentials.expireDue(later(10))).map(found => found.credentialId)).toContain(soon.credential.credentialId)
+      expect(await credentials.expireDue(later(10))).toEqual([])
+      expect((await pool.query(`select 1 from "authentication"."service_token" where "token_id" = $1`, [token.tokenId])).rows).toHaveLength(0)
+
+      const ended = await credentials.forget('service-g', later(10))
+      expect(ended.map(found => found.identityId)).toEqual(['service-g'])
+      expect((await pool.query(`select 1 from "authentication"."service_credential" where "identity_id" = 'service-g'`)).rows).toHaveLength(0)
+      expect(await credentials.forget('service-g', later(10))).toEqual([])
+    })
+
+    it('deletes expired tokens and ended credentials past the token period', async () => {
+      const credentials = store()
+      const issued = await credentials.issueSecret('service-h', at, later(90))
+      await credentials.issueToken(issued.credential, 'client-secret', at, new Date(at.getTime() + 900_000))
+      await credentials.revoke('service-h', issued.credential.credentialId, at)
+      const kept = await credentials.issueSecret('service-h', at, later(90))
+      await credentials.issueToken(kept.credential, 'client-secret', at, new Date(at.getTime() + 900_000))
+      const retention = resolveAuthenticationPolicy().retention
+      const counts = await createRetention(pool, 'authentication').apply({ at: later(31), engineAt: at, retention, holds: null })
+      expect(counts).toMatchObject({ serviceCredentials: expect.any(Number), serviceTokens: expect.any(Number) })
+      expect(counts.serviceCredentials).toBeGreaterThanOrEqual(1)
+      expect(counts.serviceTokens).toBeGreaterThanOrEqual(1)
+      expect((await pool.query(`select "credential_id" from "authentication"."service_credential" where "identity_id" = 'service-h'`)).rows)
+        .toEqual([{ credential_id: kept.credential.credentialId }])
+    })
+  })
+
+  describe('sign-in throttle', () => {
+    const policy = { maxFailedAttempts: 3, maxFailedAttemptsPerClient: 10, windowSeconds: 900, lockoutSeconds: 900 }
+
+    it('locks an account after the configured failures and reports the lock once', async () => {
+      const throttle = createSignInThrottle(pool, 'authentication', policy)
+      const key = accountKey('Locked@Example.com ')
+      expect(await throttle.recordFailure(key, 3)).toBe(false)
+      expect(await throttle.recordFailure(key, 3)).toBe(false)
+      expect(await throttle.isBlocked(key, 3)).toBe(false)
+      expect(await throttle.recordFailure(key, 3)).toBe(true)
+      expect(await throttle.isBlocked(key, 3)).toBe(true)
+      expect(await throttle.recordFailure(key, 3)).toBe(false)
+      expect(await throttle.isBlocked(accountKey('locked@example.com'), 3)).toBe(true)
+    })
+
+    it('stores only hashed account keys', async () => {
+      const { rows } = await pool.query(`select "key" from "authentication"."sign_in_throttle"`)
+      expect(rows.some(row => String(row.key).includes('@'))).toBe(false)
+    })
+
+    it('rate-limits clients without locking them out permanently', async () => {
+      const throttle = createSignInThrottle(pool, 'authentication', policy)
+      const key = clientKey('203.0.113.7')
+      for (let i = 0; i < 10; i++) expect(await throttle.recordFailure(key, 10)).toBe(false)
+      expect(await throttle.isBlocked(key, 10)).toBe(true)
+      const { rows } = await pool.query(`select "locked_until" from "authentication"."sign_in_throttle" where "key" = $1`, [key])
+      expect(rows[0].locked_until).toBeNull()
+    })
+
+    it('starts a new window once the old one has passed', async () => {
+      const throttle = createSignInThrottle(pool, 'authentication', policy)
+      const key = clientKey('203.0.113.8')
+      for (let i = 0; i < 10; i++) await throttle.recordFailure(key, 10)
+      await pool.query(`update "authentication"."sign_in_throttle" set "window_started_at" = now() - interval '1 hour' where "key" = $1`, [key])
+      expect(await throttle.isBlocked(key, 10)).toBe(false)
+      await throttle.recordFailure(key, 10)
+      const { rows } = await pool.query(`select "failures" from "authentication"."sign_in_throttle" where "key" = $1`, [key])
+      expect(rows[0].failures).toBe(1)
+    })
+
+    it('clears a key', async () => {
+      const throttle = createSignInThrottle(pool, 'authentication', policy)
+      const key = accountKey('locked@example.com')
+      await throttle.clear(key)
+      expect(await throttle.isBlocked(key, 3)).toBe(false)
+    })
+  })
+})
