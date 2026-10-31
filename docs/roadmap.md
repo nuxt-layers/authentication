@@ -1,0 +1,32 @@
+# Roadmap
+
+Each phase is delivered as its own pull request with tests, and keeps `pnpm check` green.
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1. Foundation | Package, manifest, public contract, composition ports (fail closed), policy, docs, threat model, CI, playground | Complete |
+| 2. Core | Better Auth engine (private), PostgreSQL schema and migrations, email and password, email verification, password reset, sessions (rotation, idle/absolute expiry, revocation, active-session list), throttling and lockout, compromised-password check, `getAuthenticatedPrincipal` / `requireAuthenticatedPrincipal`, `useAuthentication()`, route middleware | Complete |
+| 3. Multi-factor | TOTP with backup codes, passkeys, step-up and re-authentication, MFA-required enrolment flow | Complete |
+| 4. Federation | Google, Microsoft, GitHub, Facebook and generic OIDC; explicit linking by provider subject only; verified-email account creation; provider tokens discarded | Complete |
+| 5. Default pages | Accessible (WCAG 2.2 AA), localisable pages and reusable form components styled only through the `SemanticPresentationTheme` vocabulary; host-configurable paths, can be disabled; Playwright and axe end-to-end tests | Complete |
+| 6. Host integration | Composition into `platform-test-harness` beside Theme Manager and Nuxt UI, with host adapters, principal-to-actor mapping and negative tests; Git installs carry runtime dependencies only; durable credential recovery records and `authentication.credentials-recovered` for Identity's recovery hold; the optional identity port (Identity issues account identifiers, standing gates sign-in and every request, passkey-only break-glass) and helpers for Identity's events; `exportAuthenticationData` for Profile's data-subject requests; `DELIBERATE_PAIRINGS` no longer auto-imported (it collided with Identity's and Profile's in a host); the optional clock port (`provideAuthenticationClock`: one clock for the suite, failing closed); break-glass accounts (ADR-0007): server-only `provisionAuthenticationBreakGlass` and `rotateAuthenticationBreakGlass`, one-time passkey enrolment tokens, the token-gated enrolment endpoints and page, and passkey-only enforcement by the layer itself | Complete |
+| 7. Retention | Authentication's part of the suite's end of life ([iam-integration's retention process](https://github.com/nuxt4-layers/iam-integration/blob/cf0c5be70e162a7a1d426298cf4f13319667caea/docs/processes/retention.md)): retention periods in the policy (`retention`, `AUTHENTICATION_RETENTION_BOUNDS`, a risk treatment for shorter ones), `runAuthenticationMaintenance` for expired sessions, credential-recovery records, expired break-glass enrolment tokens and verification values, the optional legal-hold port (`provideAuthenticationLegalHolds`) and `authentication.retention-applied`. Nothing per group or tenant, so no disposal | Complete |
+| 8. Service identities | Authentication's part of [iam-integration's service identities process](https://github.com/nuxt4-layers/iam-integration/blob/69eb3df32eed2a62257e711243976cbc268c1b62/docs/processes/service-identities.md): machine credentials (a client secret shown once, or a registered `ES256`/`EdDSA` public key for `private_key_jwt`), at most two active, expiring after `serviceCredentials.credentialDays`; the client-credentials token endpoint; short-lived opaque bearer tokens resolved with the identity's standing into a `service` principal (`aal2`, never phishing resistant); credential endpoints behind the optional service-governance port and a passkey within 15 minutes; issued, revoked, expiring and token events; suspension, closure, expiry and retention | Complete |
+| 9. Release 1.0 | Contract frozen for 1.x, semantic versioning from here on, `CHANGELOG.md`; tagged `v1.0.0` on the merge commit | In review |
+
+## Testing infrastructure by phase
+
+- **Phase 1:** Vitest unit and contract tests, `nuxt typecheck`, playground build.
+- **Phase 2:** integration tests against a disposable PostgreSQL. CI uses a service container; Supabase is never used in CI.
+- **Phase 5:** Playwright end-to-end tests against the built playground composed with Theme Manager: axe (WCAG 2.2 AA rules) in light and dark mode, non-text contrast, reflow, keyboard-only journeys, passkeys through Chromium's virtual authenticator, and a mock OIDC provider. A manual screen-reader audit remains open before 1.0.
+
+## Deliberate exclusions
+
+These came from the legacy layer and are intentionally **not** part of this capability:
+
+- profile data, which goes to Profile (ADR-0005). Authentication is never its canonical source: it stores no name or picture, even when a provider supplies one, and never serves or seeds profile attributes. Importing a provider's claims into a profile, if ever wanted, is a Profile workflow specified in Profile's contract;
+- permissions and roles, which go to Authorization;
+- compliance, KYC and consent records, which go to Privacy;
+- tenancy, which goes to Identity and Authorization;
+- navigation and theme pages, which go to host applications and Theme Manager;
+- SMS, push, voice-call and biometric factors. These are modelled in the legacy layer but not planned here. Platform passkeys cover biometrics.

@@ -1,0 +1,180 @@
+# Authentication Threat Model
+
+**Status:** Living document. Revised in every phase that changes the attack surface.
+**Baseline:** OWASP ASVS 5.0 Level 2, with relevant Level 3 requirements for authentication and session management (Security Architecture §1). NIST SP 800-63-4 for assurance terminology.
+
+This document records design intent and planned controls. It is not a claim of conformance or certification. Verified controls, with evidence, are tracked in the control register in §6 as each phase lands.
+
+## 1. Assets
+
+| Asset | Why it matters |
+|---|---|
+| Password hashes | Offline cracking leads to account takeover across reused passwords |
+| Session tokens | Bearer access to the account |
+| TOTP secrets, backup codes, passkey public keys | Second-factor integrity |
+| Verification, reset and email-change tokens | Account recovery and takeover path |
+| Break-glass enrolment tokens and break-glass passkeys | Emergency access (ADR-0007): whoever enrols the passkey can act as the break-glass account |
+| Federated identity links | Sign-in by an external provider |
+| `NUXT_AUTHENTICATION_SECRET` | Forges or decrypts signed values |
+| The host's clock | Decides whether an authentication is recent and when things happened |
+| Account existence | Enumeration enables targeted attacks and is a privacy disclosure |
+
+## 2. Trust boundaries
+
+1. **Browser → Nitro server.** All input is untrusted. Client-side guards are UX only.
+2. **Nitro server → PostgreSQL** (host-supplied pool). The layer trusts only its own schema.
+3. **Server → mail provider** (host-supplied mailer). Messages carry single-use secrets in URLs.
+4. **Server → external identity providers** (OAuth/OIDC).
+5. **Server → Have I Been Pwned range API.** Only a 5-character hash prefix leaves the server.
+6. **Server → event sink** (host-supplied). It receives no secrets.
+7. **Service → token endpoint and host routes.** A service identity's client calls the token endpoint with no browser and presents bearer tokens to the host's routes; everything it sends is untrusted.
+8. **Supply chain**: npm dependencies, GitHub Actions, the Git-backed package consumed by hosts.
+
+## 3. Threats and planned controls
+
+| # | Threat | Planned controls | Phase |
+|---|---|---|---|
+| T1 | Credential stuffing and password spraying | Per-account and per-IP throttling, temporary lockout, MFA required by default, compromised-password check | 2, 3 |
+| T2 | Account enumeration | Uniform `invalid-credentials` errors, identical responses for reset and registration of existing emails, timing equalisation | 2 |
+| T3 | Offline cracking after database theft | Memory-hard password hashing using the engine's reviewed implementation, no custom cryptography, minimum length 15 | 2 |
+| T4 | Session hijacking | `__Secure-` prefixed (over https), `HttpOnly`, `Secure`, `SameSite=Lax`, host-only cookies; opaque tokens stored server-side with no cookie cache; idle (sliding) and absolute timeouts; revocation | 2 |
+| T5 | Session fixation | Session rotated on sign-in, privilege change and step-up | 2 |
+| T6 | CSRF on state-changing endpoints | SameSite cookies plus origin checks against `baseUrl`; no state change on GET | 2 |
+| T7 | Reset/verification token abuse | Reset tokens: single-use, 30 minutes, hashed at rest, never logged. Email-verification links: signed, expire after 1 hour; reuse only re-confirms the same address | 2 |
+| T8 | MFA bypass | No session issued before the second factor; the interim challenge is bound to the first-factor attempt; TOTP replay prevention; backup codes hashed and single-use | 3 |
+| T9 | Phishing | Passkeys (WebAuthn, user verification required) available to all. Hosts require them for privileged administration with `requireAuthenticatedPrincipal(event, { phishingResistant: true })` | 3 |
+| T10 | Federated account takeover | Link by provider subject only; never auto-link to an unverified email; explicit linking while signed in | 4 |
+| T11 | Sensitive change without the owner present | Re-authentication within `maxAgeSeconds` for password, email, MFA and session changes; security notification emails | 2, 3 |
+| T12 | Secret leakage via logs or events | Events carry no secrets or email addresses; mailers must not log action URLs; structured redaction | 1 (contract), 2 |
+| T13 | Misconfiguration in a host | Ports fail closed, policy floors validated at startup, secret-strength check at startup | 1, 2 |
+| T14 | Supply-chain compromise | Pinned lockfile, minimal dependencies, Renovate/Dependabot, secret scanning, pinned Action versions | 1, ongoing |
+| T15 | Cross-capability data access | Capability-owned schema (ADR-0002), no cross-schema foreign keys, least-privilege database role | 2 |
+| T17 | Authentication becomes a second, uncontrolled source of personal data (names, pictures from providers), escaping Profile's disclosure, correction and erasure | Store nothing that describes a person: the engine's `name` is always empty and `image` null, whatever a provider supplies; never serve or seed profile attributes. Profile is the only canonical source of such data and of the workflows over it (ADR-0005 §1, ADR-0006 §2) | 6 |
+| T18 | A clock moved or broken to make a stale authentication look recent, or a recent one stale | The clock is a port only the host composes, from server code; no request can set or move it; a movable clock exists only in the playground's test mode and moves forward only; a clock that throws or answers an invalid time fails the operation closed (`unavailable`), never falling back; the engine's own times (session lifetime, throttling, TOTP steps, email links) stay on the system clock | 6 |
+| T19 | Break-glass account takeover (ADR-0007): a leaked enrolment token, a weaker credential added beside the passkey, or a passkey that survives its use | Enrolment tokens: 32 random bytes, returned once, stored only as a keyed digest, single use, at most one outstanding, short-lived (60 minutes by default, at most a day), carried in the URL fragment, never logged or put in an event; refusals indistinguishable and throttled. The account is recorded as break-glass by the layer itself, so it is passkey-only with or without an identity port: no password (no reset link, the engine may not create one), no authenticator app, backup codes, provider link or further session-registered passkey. User verification required at enrolment. Rotation after each use deletes every passkey and session and kills the old token; an enrolment racing a rotation withdraws its passkey. Provisioning and rotation are server-only operator functions | 6 |
+| T20 | Records kept for ever, or deleted while a process or a legal hold still needs them | Retention schedules in the policy within shared bounds (shorter than the default only with a documented risk treatment); expired sessions and tokens deleted by `runAuthenticationMaintenance`; a credential-recovery record outlasts Identity's longest recovery hold and is deleted only once the legal-hold port says no hold covers the person, and kept when it cannot say; the run is announced with counts only | 7 |
+| T21 | Service identity compromise ([service identities](https://github.com/nuxt4-layers/iam-integration/blob/69eb3df32eed2a62257e711243976cbc268c1b62/docs/processes/service-identities.md)): a leaked secret, key or token, a replayed assertion, credentials issued by someone without control of the service, a token used as a session or above its standing, or a credential that outlives the identity | Secrets and tokens are 32 random bytes, stored only as keyed digests, the secret returned once; keys are public only (`ES256` or `EdDSA`), assertions short-lived with a single-use `jti`; credentials expire (90 days by default), at most two at once, revocation ends their tokens at once; tokens are short-lived (15 minutes by default) and opaque, checked with the identity's standing on every request, never a session or cookie, never phishing resistant, never read by the layer's own endpoints; issuing and revoking need the service-governance port and a passkey within 15 minutes, and the owners are told; failed client authentication is uniform `invalid_client`, locked out like an account; suspension ends tokens and closure deletes credentials | 8 |
+| T16 | Clickjacking, token leakage and cached credentials on the default pages | `frame-ancestors 'none'` and `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` (the reset token is in the URL), `Cache-Control: no-store`; TOTP QR codes rendered locally, never by a third-party service | 5 |
+
+## 4. Legacy defects this design closes
+
+The [legacy review](legacy-review.md) found these in `legacy-authentication`, and they must not recur:
+
+- password verification that accepted a fixed password for every account;
+- unsigned, client-editable session tokens;
+- auto-linking federated sign-ins by email without verification;
+- an MFA step that returned the raw user ID to the browser;
+- status-revealing login errors;
+- a lockout check with no failure counting.
+
+Phase 2 and 3 tests include explicit negative cases for each.
+
+## 5. Out of scope for this capability
+
+- tenant isolation, which belongs to Identity and Authorization;
+- authorisation decisions;
+- audit storage, which belongs to the event sink owner;
+- transport security and security headers for the whole application, which the host configures (the layer documents its requirements).
+
+## 6. Control register
+
+| Control | Status | Evidence |
+|---|---|---|
+| Required ports fail closed | Implemented (phase 1) | `tests/composition.test.ts` |
+| Policy floors validated; unknown keys rejected | Implemented (phase 1) | `tests/policy.test.ts` |
+| Error codes cannot reveal account existence | Implemented (contract, phase 1) | `tests/contracts.test.ts` |
+| Event sink failure cannot alter outcomes | Implemented (phase 1) | `tests/composition.test.ts` |
+| Contract free of engine/vendor types | Implemented (phase 1) | `tests/contracts.test.ts` |
+| Database migrations idempotent and race-safe; tables confined to the capability schema | Implemented (phase 2) | `tests/database.test.ts` |
+| Engine schema drift detected | Implemented (phase 2) | `tests/database.test.ts` |
+| T1 Per-account lockout and per-client throttling; lock notification | Implemented (phase 2) | `tests/database.test.ts`, `tests/integration/api.test.ts` |
+| T1 Compromised-password check (k-anonymity, padded, fails open) | Implemented (phase 2) | `tests/internals.test.ts` |
+| T2 Uniform responses for sign-in, sign-up and reset | Implemented (phase 2) | `tests/integration/api.test.ts` |
+| T3 scrypt password hashing (engine), minimum length 15 | Implemented (phase 2) | `tests/internals.test.ts` (policy) |
+| T4 HttpOnly, SameSite=Lax cookies; server-side revocation; idle and absolute timeouts | Implemented (phase 2) | `tests/integration/api.test.ts` |
+| T5 Previous session revoked on sign-in | Implemented (phase 2) | `tests/integration/api.test.ts` |
+| T6 Origin check on state-changing requests | Implemented (phase 2) | `tests/integration/api.test.ts` |
+| T7 Single-use, hashed reset tokens | Implemented (phase 2) | `tests/integration/api.test.ts`, `tests/internals.test.ts` |
+| T11 Current password required to change password; notifications for change, reset and lockout | Implemented (phase 2) | `tests/integration/api.test.ts` |
+| T12 Events contain no email addresses, passwords or tokens | Implemented (phase 2) | `tests/integration/api.test.ts` |
+| T13 Secret length and https base URL enforced | Implemented (phase 2) | `tests/internals.test.ts` |
+| Telemetry and client-IP tracking disabled in the engine | Implemented (phase 2) | `tests/internals.test.ts` |
+| Open-redirect protection for return paths | Implemented (phase 2) | `tests/internals.test.ts`, `tests/integration/api.test.ts` |
+| MFA required by default; sessions without a second factor limited to enrolment (`requireAuthenticatedPrincipal` defaults to aal2) | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T8 No session before the second factor; 5-minute interim cookie | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T8 TOTP replay rejected (last-used time step per user, atomic) | Implemented (phase 3) | `tests/integration/mfa.test.ts`, `tests/internals.test.ts` |
+| T8 TOTP activated only after a first valid code; secret encrypted at rest | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T8 Backup codes: about 95 bits, single-use, stored as HMAC-SHA-256 digests keyed with the server secret | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T8 Second-factor lockout after repeated failures | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T9 Passkeys with user verification enforced by the layer (the engine does not require it) | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T9 Forged assertions rejected; another principal's passkey cannot be removed | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T11 Step-up: sensitive operations need authentication within 15 minutes; re-authenticate by password, TOTP or passkey | Implemented (phase 3) | `tests/integration/api.test.ts`, `tests/integration/mfa.test.ts` |
+| Remembered devices off by default (policy `rememberedDevice.days: 0`) | Implemented (phase 3) | `tests/integration/mfa.test.ts`, `tests/policy.test.ts` |
+| Notifications for MFA enrolment and removal, backup-code use and regeneration | Implemented (phase 3) | `tests/integration/mfa.test.ts` |
+| T10 No implicit linking by email; explicit linking only while signed in with a recent, strong session | Implemented (phase 4) | `tests/integration/federation.test.ts` |
+| T10 Accounts created only for provider-verified emails; uniform outcomes reveal no account existence | Implemented (phase 4) | `tests/integration/federation.test.ts`, `tests/internals.test.ts` |
+| T10 State, PKCE and nonce; forged or replayed callbacks refused; previous session revoked | Implemented (phase 4) | `tests/integration/federation.test.ts` |
+| T10 Identity already linked elsewhere cannot be relinked; last sign-in method cannot be unlinked | Implemented (phase 4) | `tests/integration/federation.test.ts` |
+| Provider tokens discarded (the engine would keep OIDC ID tokens in plain text) | Implemented (phase 4) | `tests/integration/federation.test.ts` |
+| Provider MFA not trusted: provider sign-ins are aal1 and step up locally | Implemented (phase 4) | `tests/integration/federation.test.ts` |
+| T14 Actions pinned to commit SHAs; workflow token read-only; CI holds no secrets | Implemented (phase 6) | `.github/workflows/quality.yml` (review), `docs/repository-security.md` |
+| T14 Install scripts allow-listed; dependencies at least a day old; registry-only transitive dependencies; Dependabot with cooldown; dependency review on pull requests (development-only exceptions under Known gaps) | Implemented (phase 6) | `pnpm-workspace.yaml`, `.github/dependabot.yml`, `.github/workflows/dependency-review.yml` |
+| T14 Repository settings (rulesets, code owners, secret scanning with push protection, CodeQL, private vulnerability reporting) | Checklist (phase 6) | `docs/repository-security.md` |
+| T16 Default pages refuse framing, caching and referrer leakage | Implemented (phase 5) | `tests/e2e/pages.spec.ts` |
+| T16 Credentials never reach a URL: forms use `method="post"` and stay disabled until hydrated, so no native (GET) submission can happen. Found by host composition, where slower hydration let a sign-in submit as GET | Implemented (phase 6) | `tests/e2e/pages.spec.ts` |
+| T16 TOTP QR code rendered in the browser from the provisioning URI; no third-party QR service | Implemented (phase 5) | `presentation/components/TotpEnrolment.vue` (review) |
+| With an identity port, the account's standing is read at every sign-in and on every request: a suspended or closed account loses its sessions at once, a break-glass account signs in by passkey only, refusals read as `invalid-credentials`, and an unreachable port fails closed | Implemented (phase 6) | `tests/integration/identity.test.ts`, `tests/internals.test.ts` |
+| T18 Clock port: every time the layer keeps or judges (events, recoveries, `authenticatedAt`, freshness, exports) comes from the host's clock or the system clock; a failing or invalid clock fails closed as `unavailable`; a clock is trusted like a key, composed by the host from server code only, and movable only in the playground's test mode (forward only) | Implemented (phase 6) | `tests/composition.test.ts`, `tests/integration/api.test.ts` |
+| T19 Break-glass enrolment tokens: 32 random bytes, returned once, stored only as an HMAC-SHA-256 digest keyed from the layer's secret, single use, at most one outstanding per account, expiring by the layer's clock (default 60 minutes, 5–1 440); never in an event, message or log; read from the URL fragment by the page; every refusal (unknown, used, expired, malformed) answers alike and counts against the client throttle; the WebAuthn challenge is held server-side and used once | Implemented (phase 6) | `tests/database.test.ts`, `tests/internals.test.ts`, `tests/integration/break-glass.test.ts`, `tests/e2e/pages.spec.ts` |
+| T19 Break-glass accounts are passkey-only by the layer's own record, with or without an identity port: password sign-in refused, no reset link sent and no password account created, authenticator app, backup codes, password change, provider links and session-registered passkeys refused (`account-restricted`); enrolment requires user verification and sets no session | Implemented (phase 6) | `tests/integration/break-glass.test.ts` |
+| T19 Break-glass rotation (after each use) deletes every passkey and session and replaces the outstanding token; the old token and passkey stop working; only break-glass accounts rotate; provisioning and rotation are server-only, never an endpoint | Implemented (phase 6) | `tests/integration/break-glass.test.ts` |
+| A credential recovery (password reset, backup-code sign-in) is recorded durably before it completes, failing closed, and announced as `authentication.credentials-recovered`, so Identity's recovery hold can neither be skipped by a lost event nor by a failed write | Implemented (phase 6) | `tests/database.test.ts`, `tests/integration/api.test.ts`, `tests/integration/mfa.test.ts` |
+| T20 Retention: expired sessions, enrolment tokens and verification values deleted past their periods (sessions and verification values by the engine's system clock, so a host clock ahead never deletes a live session); credential-recovery records deleted past theirs only when the legal-hold port answers that no hold covers the person (kept without the port, on failure, or when recovered again meanwhile); periods within bounds and below the default only with a risk treatment; `authentication.retention-applied` carries counts only; maintenance is server-only, never an endpoint | Implemented (phase 7) | `tests/policy.test.ts`, `tests/composition.test.ts`, `tests/database.test.ts`, `tests/integration/break-glass.test.ts` |
+| T21 Service credentials: secrets and tokens 32 random bytes, stored only as HMAC-SHA-256 digests keyed by purpose, secrets compared in constant time and returned once; public keys only, `ES256` on P-256 or `EdDSA` on Ed25519 (private members, other curves and off-curve points refused), stored with their RFC 7638 thumbprint; at most two active per identity under a lock; expiry within 1–365 days (longer than 90 only with a risk treatment) | Implemented (phase 8) | `tests/client-assertion.test.ts`, `tests/database.test.ts`, `tests/policy.test.ts` |
+| T21 Client assertions verified with Node's crypto: the algorithm bound to the key type, `iss` and `sub` the client, `aud` the token endpoint, at most 5 minutes' validity, a `jti` used once, no `crit` header | Implemented (phase 8) | `tests/client-assertion.test.ts`, `tests/integration/service-identities.test.ts` |
+| T21 Token endpoint: client credentials only, exactly one way of authenticating, duplicated parameters refused; every failed client authentication `invalid_client`, counted against the identity's lockout and the caller's throttle; only an identity the identity port answers `allowed` gets a token, none without the port; a failing port `temporarily_unavailable`; `no-store`, no cookie; exempt from the origin check only because it reads no cookie | Implemented (phase 8) | `tests/integration/service-identities.test.ts` |
+| T21 Bearer tokens: looked up with the standing on every request, giving a `service` principal at `aal2`, never phishing resistant; a refused standing ends the identity's tokens; a bearer request never falls back to a cookie; the layer's own endpoints never read a bearer token | Implemented (phase 8) | `tests/integration/service-identities.test.ts` |
+| T21 Credential management: a person (never a service) whom the service-governance port allows, `forbidden` otherwise whether or not the identity exists, `unavailable` when the port fails; issuing and revoking need a phishing-resistant authentication within 15 minutes; issuing, revoking, expiring and the 14-day warning are events with the credential and actor, never the secret, key or token | Implemented (phase 8) | `tests/composition.test.ts`, `tests/integration/service-identities.test.ts` |
+| T21 Lifecycle: revoking or expiring a credential ends its tokens at once; maintenance ends expired credentials; `revokeAuthenticationSessions` ends a suspended identity's tokens; `deleteAuthenticationAccount` deletes a closed identity's credentials, tokens and assertions; ended credentials and expired tokens deleted after `retention.tokenDays` | Implemented (phase 8) | `tests/database.test.ts`, `tests/integration/service-identities.test.ts` |
+| T17 Federated sign-up stores no provider name or picture; migration `0003_no_names_or_images` blanks any stored by earlier releases | Implemented (phase 6) | `tests/integration/federation.test.ts`, `tests/database.test.ts` |
+| A data-subject export (`exportAuthenticationData`) carries nothing that would let anyone sign in as the person: no password hash, TOTP secret, backup code, passkey key, provider or session token, or IP address; server-only, never an endpoint | Implemented (phase 6) | `tests/integration/identity.test.ts` |
+| Default pages: sign-in returns only to same-origin paths | Implemented (phase 5) | `tests/e2e/pages.spec.ts`, `tests/internals.test.ts` |
+| Default pages: automated WCAG 2.2 AA rules (axe) in light and dark mode, non-text contrast, 320px reflow, keyboard-only journey, announced and focused errors | Implemented (phase 5) | `tests/e2e/pages.spec.ts` |
+| Presentation separated from the core: the core never imports it, it reaches the server only through the client API, and `presentation: false` registers none of it | Implemented (phase 6) | `tests/architecture.test.ts` |
+| Default pages follow Theme Manager's semantic presentation grammar: same-role, same-state Fill/Pen/Edge, documented deliberate pairings, Theme Manager sizes only, no private theme variables | Implemented (phase 6) | `tests/presentation.test.ts` |
+| Default pages: password managers supported (`autocomplete` `username` or `email`, `current-password`, `new-password`, `one-time-code`; paste allowed; show-password toggle) | Implemented (phase 5) | `tests/e2e/pages.spec.ts` |
+
+### ASVS 5.0 mapping (by section)
+
+This maps controls to OWASP ASVS 5.0 chapters and sections. Requirement-level identifiers must be checked against the official 5.0.0 text before they are cited as evidence. That check is an open action and is listed below.
+
+| ASVS 5.0 area | Controls |
+|---|---|
+| V6 Authentication: password security | Minimum 15 / maximum 128 characters, breached-password check, no composition rules, scrypt hashing |
+| V6 Authentication: general security | Uniform errors, per-account lockout, per-client throttling, security notifications |
+| V6 Authentication: factor lifecycle and recovery | Single-use reset tokens hashed at rest, reset revokes sessions, factor changes require recent authentication and notify |
+| V6 Authentication: multi-factor | MFA required by default, TOTP replay protection, backup codes hashed and single-use, second-factor lockout |
+| V6 Authentication: cryptographic authenticators | Passkeys with user verification, signature counters checked by the engine |
+| V7 Session management | Opaque server-side tokens, HttpOnly/SameSite cookies, rotation on sign-in and privilege change, idle and absolute timeouts, revocation, active-session list, re-authentication for sensitive operations |
+| V3 Web frontend security | Origin check on state-changing requests, SameSite=Lax; framing refused and referrer suppressed on the default pages |
+
+### Known gaps and risk treatment
+
+| Gap | Risk | Treatment |
+|---|---|---|
+| Compromised-password check fails open when HIBP is unreachable | A breached password may be accepted during an outage | Logged warning. Length minimum of 15 still applies. Revisit if outages are frequent. |
+| Email-verification links are stateless signed tokens, so they can be reused until expiry | Reuse only re-verifies the same address | Accepted. 1-hour expiry. |
+| Per-client throttling relies on correct `trustProxy` configuration | Behind a proxy without `trustProxy`, all clients share one address and hit the limit together; with `trustProxy` but no overwriting proxy, attackers can spoof addresses | Documented in the composition contract. The per-account lockout is unaffected. |
+| ASVS mapping is by section, not yet by requirement identifier | Evidence is not yet traceable to individual requirements | Open action: verify identifiers against the official ASVS 5.0.0 text and add them to the register. |
+| Remembered devices, when a host enables them, let a stolen device cookie skip the second factor | Second-factor bypass on that device for up to `days` | Off by default. A host that enables it must record the risk. |
+| Facebook never reports email verification | Facebook identities cannot create accounts, only be linked | By design. Documented for hosts. |
+| Only one generic OIDC provider per deployment | Several enterprise IdPs need separate deployments | Revisit when a host needs more than one. |
+| Phishing resistance for issuing service credentials is judged on the session's methods: a session that signed in with a passkey and later re-authenticated with a password still counts as phishing resistant and recent | Someone holding the session and the password could issue a credential without the passkey within the window | As for every privileged operation that requires `phishingResistant` with a maximum age: the session itself was established by a passkey, and the owners are told of every credential. Revisit if a stricter "the last authentication was phishing resistant" requirement is added. |
+| Service credentials have no second approver | One administrator of the owning group can mint a credential for a service identity they manage | By design (iam-integration's service identities process): creating the identity and giving it access already needed approval; issuing needs a passkey within 15 minutes and is announced to the group's owners. |
+| Passkeys need a registrable domain as the relying-party ID | IP-address origins cannot use passkeys in browsers | Production base URLs use a domain. Tests use a software authenticator. |
+| Break-glass enrolment runs the WebAuthn registration outside the engine (`@simplewebauthn/server`, the engine's own library), because the engine's registration needs a session | The layer, not the engine, must keep the relying party, encoding and checks in step with the engine | The relying party is read from the engine's own passkey configuration; the credential is stored through the engine's adapter in its table; the end-to-end suite signs in with an enrolled passkey through the engine's ordinary passkey sign-in, so a drift fails CI. |
+| Automated accessibility checks cover only part of WCAG 2.2 AA | Issues axe cannot detect (reading order, meaningful text, screen-reader announcements in context, cognitive load) may remain | Keyboard, focus and announcement journeys are tested in a browser. A manual audit with screen readers (NVDA, VoiceOver) is an open action before 1.0. |
+| Contrast depends on the host's theme | A user-defined Theme Manager theme can pair colours below WCAG 2.2 AA; Theme Manager validates structure, not contrast | Components use only same-role pairings, which Theme Manager's default theme guarantees, plus four documented deliberate pairings (`docs/contracts.md`, Styling). The end-to-end suite checks rendered contrast against the unmodified default theme. Hosts that allow custom themes own their contrast review. |
+| `simple-git` 3.36.0 advisories GHSA-x6jw-m9v5-85vh (critical), GHSA-858h-whjf-mvg5 and GHSA-g4wm-2vf7-vfgr (high), allow-listed in `dependency-review.yml` | Command execution if an attacker controls `simple-git` arguments or Git configuration | Accepted 2026-10-08, review by 2027-01-08. Reached only through `nuxt` → `@nuxt/devtools` (a devDependency, never installed into hosts); devtools passes fixed arguments (`branch`, `revparse --short HEAD`, `status`) on the local checkout in `nuxt dev` only. No patched 3.x exists, and `simple-git` 4.x drops the default export devtools imports. Remove the allow-list once devtools depends on a patched `simple-git`. GHSA-v5rq-49vh-5v5c in its `argv-parser` is fixed by a pnpm override. |
+| `braces` 3.0.3 advisory GHSA-vfj7-8cjw-p6xm (high), allow-listed in `dependency-review.yml` | Denial of service from a deeply nested brace pattern | Accepted 2026-10-08, review by 2027-01-08. Reached only through `nuxt` → `nitropack` → `globby`/`micromatch` (devDependencies here; `nuxt` is a peer), which expand glob patterns from the project's own configuration at build time, never user input. No patched `braces` release exists. Remove the allow-list once one does. |
+| `node-forge` 1.4.0 advisory GHSA-86w9-cpqp-85rv (high), allow-listed in `dependency-review.yml` | Forged RSA signatures accepted by signature verification | Accepted 2026-10-08, review by 2027-01-08. Reached only through `nuxt` → `@nuxt/cli` → `listhen` (devDependencies here; `nuxt` is a peer), which uses it to generate, encode and load a self-signed certificate for `nuxt dev --https` and never verifies signatures. No patched `node-forge` release exists. Remove the allow-list once one does. |
