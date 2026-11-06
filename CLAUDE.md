@@ -6,6 +6,7 @@ Governed by `nuxt-layers/platform-architecture`; persistence follows ADR-0002.
 Better Auth is the private engine (from phase 2) and must never appear in `contracts/` or `shared/`.
 
 ## Commands
+- Toolchain (ADR-0013): Node.js 26.13.0 (`.node-version`) and pnpm 12.16.1 from `packageManager` through Corepack 0.36.0 (`corepack enable`), locally and in CI. `engines.node` states what hosts need (`>=22`), not the development baseline. Install scripts run only for packages under `allowBuilds` in `pnpm-workspace.yaml`
 - `pnpm install`, then `pnpm dev:prepare` for Nuxt types. Never add a `prepare`/`postinstall` script: Git installs would then pull devDependencies (Theme Manager, Playwright) into hosts
 - `pnpm check` = `nuxt typecheck` + `vitest run`; run it after every code change
 - `pnpm build:playground` proves the layer composes in a host

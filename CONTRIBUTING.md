@@ -30,7 +30,8 @@ and never patch its private `--ui-*` variables.
 
 Add a dependency only when necessary, and say why in the pull request. New
 dependencies must be maintained, MIT-compatible and free of install scripts
-(pnpm runs install scripts only for packages listed in `pnpm-workspace.yaml`).
+(pnpm runs install scripts only for packages listed under `allowBuilds` in
+`pnpm-workspace.yaml`).
 Always commit `pnpm-lock.yaml`.
 
 ## Security issues
