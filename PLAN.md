@@ -23,7 +23,6 @@ External documents are named by their entry in [RESOURCES.md](RESOURCES.md).
 ## Open items
 
 - A manual screen-reader audit of the default pages.
-- `sign_in_throttle` has no retention schedule; its client rows hold IP addresses ([STORAGE-REGISTER.md](STORAGE-REGISTER.md)).
 
 ## Testing by phase
 

@@ -400,6 +400,25 @@ describe.skipIf(!hasDatabase)('authentication database', () => {
       expect(rows[0].failures).toBe(1)
     })
 
+    it('purges rows that no longer affect a decision, and keeps the rest', async () => {
+      const throttle = createSignInThrottle(pool, 'authentication', policy)
+      const table = '"authentication"."sign_in_throttle"'
+      const stale = clientKey('203.0.113.20')
+      const active = clientKey('203.0.113.21')
+      const locked = accountKey('purge-locked@example.com')
+      const unlocked = accountKey('purge-unlocked@example.com')
+      for (const key of [stale, active, locked, unlocked]) await throttle.recordFailure(key, 10)
+      await pool.query(`update ${table} set "window_started_at" = now() - interval '1 hour' where "key" = any($1::text[])`, [[stale, locked, unlocked]])
+      await pool.query(`update ${table} set "locked_until" = now() + interval '10 minutes' where "key" = $1`, [locked])
+      await pool.query(`update ${table} set "locked_until" = now() - interval '1 minute' where "key" = $1`, [unlocked])
+
+      expect(await throttle.purgeStale()).toBeGreaterThanOrEqual(2)
+
+      const { rows } = await pool.query(`select "key" from ${table} where "key" = any($1::text[])`, [[stale, active, locked, unlocked]])
+      expect(rows.map(row => row.key).sort()).toEqual([active, locked].sort())
+      expect(await throttle.isBlocked(locked, 10)).toBe(true)
+    })
+
     it('clears a key', async () => {
       const throttle = createSignInThrottle(pool, 'authentication', policy)
       const key = accountKey('locked@example.com')
