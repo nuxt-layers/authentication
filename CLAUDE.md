@@ -2,7 +2,7 @@
 
 ## What this is
 Nuxt 4 foundation layer for authentication (who is signed in, session lifecycle).
-Governed by `nuxt-layers/platform-architecture`; persistence follows ADR-0002.
+Governed by `nuxt-layers/architecture-rules`; persistence follows ADR-0002.
 Better Auth is the private engine (from phase 2) and must never appear in `contracts/` or `shared/`.
 
 ## Commands
@@ -34,7 +34,7 @@ Better Auth is the private engine (from phase 2) and must never appear in `contr
 - Retention (docs/contracts.md §13): `runAuthenticationMaintenance` deletes past the policy's `retention` periods; a credential-recovery record only when the legal-hold port answers that no hold covers the person, and is kept otherwise. Events of a run carry counts, never identifiers.
 - Credential recoveries (password reset, backup-code sign-in) are recorded in `credential_recovery` before they complete, failing closed, then announced as `authentication.credentials-recovered`. Keep the tests proving it.
 - Defaults are secure; loosening policy requires a documented risk treatment.
-- Keep `docs/contracts.md`, `docs/threat-model.md` (control register) and `docs/roadmap.md` in step with code.
+- Keep `CONTRACT.md`, `docs/contracts.md`, `docs/threat-model.md` (control register), `STORAGE-REGISTER.md` and `PLAN.md` in step with code. External links go only in `RESOURCES.md` (ADR-0010).
 - Default pages and components style only through the SemanticPresentationTheme vocabulary (`authenticationClasses`), never raw colours or Tailwind default sizes (e.g. `min-h-11`, `w-48`, `tracking-*`: use Theme Manager's scales), following Theme Manager's Semantic Presentation Guide: Fill/Pen/Edge of one surface share role and state; any other pairing goes in `DELIBERATE_PAIRINGS` (`presentation/pairings.ts`, never auto-imported) and `docs/contracts.md`. Text comes from `presentation/messages.ts` via `useAuthenticationText()`. Keep every component in `tailwind.css` source paths.
 - Never weaken an axe or contrast assertion to get green. Fix the component's semantic composition first; a genuine palette defect is fixed in Theme Manager, never by setting its private `--ui-*` variables here or in the playground.
 - Client calls that may run during SSR must use `useRequestFetch()` so the session cookie is forwarded.

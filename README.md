@@ -2,20 +2,20 @@
 
 > **AI-Driven Development**
 >
-> This repository is part of [Nuxt Layers](https://github.com/nuxt-layers), an experimental, AI-driven software engineering initiative.
+> This repository is part of Nuxt Layers, an experimental, AI-driven software engineering initiative.
 >
 > AI performs the principal architecture, development, testing, security assessment and documentation activities under human direction. The project owner retains authority over requirements, governance, acceptance and releases.
 >
 > **Our objective is to demonstrate that disciplined, specification-led AI development can deliver secure, maintainable, standards-compliant, production-quality open-source software.**
 >
-> All contributions are subject to the same engineering standards, quality controls and repository policies, regardless of origin. See the [AI development methodology](https://github.com/nuxt-layers/platform-architecture/blob/master/AI_DEVELOPMENT.md).
+> All contributions are subject to the same engineering standards, quality controls and repository policies, regardless of origin. See *Contributing* in [RESOURCES.md](RESOURCES.md) for the method.
 
 
 Nuxt 4 **foundation** capability that establishes **who has signed in** and manages the secure lifecycle of the authenticated session.
 
 It is designed to be composed into a host application as a black box: the host supplies infrastructure through documented ports, and everything else stays private to the layer.
 
-> **Status: 1.0.0.** Contract version 1 is frozen for 1.x; see [CHANGELOG.md](CHANGELOG.md) and the [roadmap](docs/roadmap.md). Email and password, verification, reset, sessions, lockout and throttling; TOTP with backup codes, passkeys (including passwordless sign-in) and step-up re-authentication; sign-in with Google, Microsoft, GitHub, Facebook or any OIDC provider (linked only explicitly, by provider subject); break-glass accounts; service identities' client credentials; retention; and accessible, localisable default pages styled through Theme Manager's semantic vocabulary, all on PostgreSQL. **MFA is required by default.**
+> **What it does:** Email and password, verification, reset, sessions, lockout and throttling; TOTP with backup codes, passkeys (including passwordless sign-in) and step-up re-authentication; sign-in with Google, Microsoft, GitHub, Facebook or any OIDC provider (linked only explicitly, by provider subject); break-glass accounts; service identities' client credentials; retention; and accessible, localisable default pages styled through Theme Manager's semantic vocabulary, all on PostgreSQL. **MFA is required by default.** Plans and status are in [PLAN.md](PLAN.md).
 
 ## Bounded responsibility
 
@@ -53,102 +53,21 @@ The layer also provides these, auto-imported for the host:
 
 Every other path is private. See [docs/contracts.md](docs/contracts.md).
 
-## Installation
+## Using it
 
-Install as a Git-backed package dependency **following `master`** (ADR-0008: there are no release tags until formal releases begin), then extend it by package name:
+[CONTRACT.md](CONTRACT.md) is the complete host contract: install, settings, what the host passes, functions, screens, storage and the pitfalls. [STORAGE-REGISTER.md](STORAGE-REGISTER.md) lists everything the layer stores, and [docs/contracts.md](docs/contracts.md) is the detailed specification for maintainers.
 
-```jsonc
-// package.json
-"dependencies": {
-  "@nuxt-layers/authentication": "github:nuxt-layers/authentication#master"
-}
-```
+A protected server route looks like this:
 
 ```ts
-// nuxt.config.ts
-export default defineNuxtConfig({
-  extends: ['@nuxt-layers/authentication'],
-})
-```
-
-Commit the lockfile, and install with `pnpm install --frozen-lockfile` in CI.
-
-## Composition
-
-The host supplies ports from a Nitro plugin. Required ports fail closed when absent.
-
-```ts
-// server/plugins/authentication.ts
-import pg from 'pg'
-
-export default defineNitroPlugin(() => {
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
-
-  provideAuthenticationDatabase({ dialect: 'postgres', pool })            // required
-  migrateAuthenticationDatabase()                                          // applies pending migrations
-  provideAuthenticationMailer({ send: message => mailer.send(message) })  // required
-  provideAuthenticationEventSink({ emit: event => audit.record(event) })  // optional
-  provideAuthenticationPolicy({ password: { minLength: 16 } })            // optional
-  provideAuthenticationClock(suiteClock)                                   // optional: the suite's one clock; the system clock without it
-  provideAuthenticationLegalHolds(holds)                                   // optional: iam-integration's legalHoldsFromMembers({ part: 'authentication', ... })
-  provideAuthenticationServiceGovernance(governance)                       // optional: iam-integration's authenticationServiceGovernanceFromIdentity
-})
-```
-
-Protect server routes on the server; route middleware is only a user-experience guard:
-
-```ts
-// server/api/account/profile.get.ts
+// server/api/account/settings.get.ts
 export default defineEventHandler(async (event) => {
   const principal = await requireAuthenticatedPrincipal(event)          // 401 signed out, 403 below aal2
-  return loadProfile(principal.principalId)
+  return loadSettings(principal.principalId)
 })
 ```
 
-```vue
-<script setup lang="ts">
-definePageMeta({ middleware: 'authenticated' })
-const { principal, signOut } = useAuthentication()
-</script>
-```
-
-### Default pages
-
-Pages are registered at `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`, `/mfa`, `/account/security` and `/break-glass/enrol` (an operator's one-time passkey enrolment for a break-glass account). Move or disable them in `nuxt.config.ts`:
-
-```ts
-export default defineNuxtConfig({
-  extends: ['@nuxt-layers/authentication', '@nuxt-layers/theme-manager'],
-  authentication: { pages: { paths: { signIn: '/login' } } },   // or { enabled: false }
-})
-```
-
-A host with its own design sets `authentication: { presentation: false }`: no pages, components or presentation auto-imports are registered, and the core works unchanged.
-
-They are styled only through the `SemanticPresentationTheme` vocabulary (Theme Manager), an optional capability. Add the layer's sources to your Tailwind entry so the utilities are generated:
-
-```css
-@import "@nuxt-layers/theme-manager/presentation.css";
-@import "@nuxt-layers/authentication/tailwind.css";
-```
-
-Your theme must meet the contrast pairings in [docs/contracts.md](docs/contracts.md) §11. Override text or add locales in `app.config.ts` under `authentication.messages`.
-
-See [docs/composition-contract.md](docs/composition-contract.md) for the full contract, including persistence ([ADR-0002](https://github.com/nuxt-layers/platform-architecture/blob/main/docs/decisions/ADR-0002-composition-supplied-persistence-and-capability-owned-schemas.md)) and configuration.
-
-## Configuration
-
-| Runtime config | Environment variable | Purpose |
-|---|---|---|
-| `authentication.secret` | `NUXT_AUTHENTICATION_SECRET` | Signing/encryption secret, at least 32 random bytes. Server-only. |
-| `authentication.baseUrl` | `NUXT_AUTHENTICATION_BASE_URL` | Canonical external origin used in links and origin checks. Must be https in production. |
-| `authentication.trustProxy` | `NUXT_AUTHENTICATION_TRUST_PROXY` | Read client IPs from `X-Forwarded-For`. Enable only behind a proxy that overwrites it. |
-| `public.authentication.routes` | `NUXT_PUBLIC_AUTHENTICATION_ROUTES_*` | Sign-in, sign-up, forgot-password, reset-password, MFA (enrol / step-up), security, after-sign-in and after-sign-out paths. When the default pages are on, `authentication.pages.paths` sets them at build time. |
-| `public.authentication.locale` | `NUXT_PUBLIC_AUTHENTICATION_LOCALE` | Locale passed to the mailer (default `en-GB`). |
-| `authentication.providers.<id>.clientId` / `clientSecret` | `NUXT_AUTHENTICATION_PROVIDERS_<ID>_CLIENT_ID` / `_CLIENT_SECRET` | Enables `google`, `microsoft` (`_TENANT_ID`), `github`, `facebook`, or `oidc` (`_DISCOVERY_URL`, `_NAME`). Register `<base URL>/api/authentication/federation/callback/<id>` with the provider. |
-| `public.authentication.appName` | `NUXT_PUBLIC_AUTHENTICATION_APP_NAME` | Name in authenticator apps and passkey prompts (default: base URL host). |
-
-Secrets come from deployment secret management and are never committed.
+Route middleware (`definePageMeta({ middleware: 'authenticated' })`) only improves the experience; the server check is the security boundary.
 
 ## Security and privacy
 
@@ -167,17 +86,19 @@ pnpm build:playground # production build of the playground
 pnpm test:e2e         # Playwright + axe against the built playground (needs AUTHENTICATION_TEST_DATABASE_URL)
 ```
 
-The playground composes [Theme Manager](https://github.com/nuxt-layers/theme-manager) as a devDependency following its latest `master` (ADR-0008). Hosts installing the layer from Git do not get it: the package has no install-time scripts, so only its runtime dependencies are installed.
+The playground composes Theme Manager as a devDependency following its latest `master` (ADR-0008). Hosts installing the layer from Git do not get it: the package has no install-time scripts, so only its runtime dependencies are installed.
 
 Database and end-to-end suites run against a **disposable local PostgreSQL**, never a hosted one. Point `AUTHENTICATION_TEST_DATABASE_URL` at an admin connection (for example `postgres://postgres@localhost:5432/postgres`); each suite creates and drops its own database. Without it those suites are skipped locally and **fail in CI**.
 
 ## Documentation
 
+- [Host contract](CONTRACT.md)
 - [Architecture](docs/architecture.md)
-- [Public contract](docs/contracts.md)
-- [Composition contract](docs/composition-contract.md)
+- [Detailed specification](docs/contracts.md)
 - [Threat model](docs/threat-model.md)
-- [Roadmap](docs/roadmap.md)
+- [Plan](PLAN.md)
+- [Storage register](STORAGE-REGISTER.md)
+- [External resources](RESOURCES.md)
 - [Legacy layer review](docs/legacy-review.md)
 - [Repository security configuration](docs/repository-security.md)
 - [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md)

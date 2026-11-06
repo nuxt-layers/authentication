@@ -14,15 +14,14 @@ and [docs/threat-model.md](docs/threat-model.md) before changing server code.
    before it is merged.
 
 Commits to `master` must be signed. Sign yours with
-[SSH or GPG](https://docs.github.com/authentication/managing-commit-signature-verification),
-or a maintainer will squash-merge (GitHub signs the merge commit).
+SSH or GPG (GitHub's commit signature verification), or a maintainer will squash-merge (GitHub signs the merge commit).
 
 ## Theme Manager
 
 The playground and the end-to-end suite compose
-[Theme Manager](https://github.com/nuxt-layers/theme-manager), following its
+Theme Manager, following its
 latest `master` as a devDependency. The default pages follow its
-[Semantic Presentation Guide](https://github.com/nuxt-layers/theme-manager/blob/master/docs/semantic-presentation-guide.md):
+*Semantic Presentation Guide* ([RESOURCES.md](RESOURCES.md)):
 choose tokens by meaning, pair Fill, Pen and Edge of the same role and state,
 and never patch its private `--ui-*` variables.
 
