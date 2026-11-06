@@ -398,7 +398,7 @@ Beyond Theme Manager's same-role guarantees, the components use these deliberate
 
 ### Logo
 
-The layer owns `public/authentication-logo.png`, and the package ships its `public` directory. Composed as a Nuxt layer, the host serves it at `/authentication-logo.png` (subject to its public asset base URL and to a host asset with the same name). Beside the visible text "Authentication" the logo is decorative: use `alt=""`. Hosts display it from that URL; they never import a private package path or copy the image into another repository.
+The layer owns `public/authentication-logo.png`, and the package ships its `public` directory. Composed as a Nuxt layer, the host serves it at `/authentication-logo.png` (subject to its public asset base URL and to a host asset with the same name). The image carries the words "Nuxt Layers Authentication". Beside the visible text "Authentication" the logo is decorative: use `alt=""`. Shown alone, it is the only label: use `alt="Nuxt Layers Authentication"`. Hosts display it from that URL; they never import a private package path or copy the image into another repository.
 
 ### Messages
 
