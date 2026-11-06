@@ -19,7 +19,7 @@ export function createHibpCheck(fetchImpl: typeof fetch = fetch, timeoutMs = 3_0
     const suffix = digest.slice(5)
     try {
       const response = await fetchImpl(`https://api.pwnedpasswords.com/range/${prefix}`, {
-        headers: { 'Add-Padding': 'true', 'User-Agent': 'nuxt4-layers-authentication' },
+        headers: { 'Add-Padding': 'true', 'User-Agent': 'nuxt-layers-authentication' },
         signal: AbortSignal.timeout(timeoutMs),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)

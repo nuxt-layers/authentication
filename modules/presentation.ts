@@ -41,7 +41,7 @@ const PAGES: { key: keyof AuthenticationPagePaths, file: string }[] = [
 ]
 
 export default defineNuxtModule<AuthenticationModuleOptions>({
-  meta: { name: '@nuxt4-layers/authentication/presentation', configKey: 'authentication' },
+  meta: { name: '@nuxt-layers/authentication/presentation', configKey: 'authentication' },
   defaults: {
     presentation: true,
     pages: {

@@ -1,6 +1,6 @@
 /**
- * Public presentation surface of `@nuxt4-layers/authentication`
- * (`@nuxt4-layers/authentication/presentation`).
+ * Public presentation surface of `@nuxt-layers/authentication`
+ * (`@nuxt-layers/authentication/presentation`).
  *
  * The default pages and form components depend on the contract and the
  * client API (`useAuthentication()`, `useAuthenticationPublicPolicy()`) only.

@@ -1,5 +1,5 @@
 /**
- * Public contract for the `@nuxt4-layers/authentication` capability.
+ * Public contract for the `@nuxt-layers/authentication` capability.
  *
  * This module is the only supported cross-layer import path for the layer's
  * types and pure helpers. Everything else in the repository is private.

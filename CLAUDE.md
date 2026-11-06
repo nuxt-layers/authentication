@@ -1,8 +1,8 @@
-# @nuxt4-layers/authentication — notes for Claude
+# @nuxt-layers/authentication — notes for Claude
 
 ## What this is
 Nuxt 4 foundation layer for authentication (who is signed in, session lifecycle).
-Governed by `nuxt4-layers/platform-architecture`; persistence follows ADR-0002.
+Governed by `nuxt-layers/platform-architecture`; persistence follows ADR-0002.
 Better Auth is the private engine (from phase 2) and must never appear in `contracts/` or `shared/`.
 
 ## Commands

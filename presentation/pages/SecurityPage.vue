@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Default page provided by @nuxt4-layers/authentication. Disable with authentication.pages.enabled = false. */
+/** Default page provided by @nuxt-layers/authentication. Disable with authentication.pages.enabled = false. */
 definePageMeta({ middleware: 'authenticated' })
 const { t, locale } = useAuthenticationText()
 useHead({ title: t('authentication.security.title'), htmlAttrs: { lang: locale } })

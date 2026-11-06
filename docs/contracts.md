@@ -5,7 +5,7 @@
 
 ## 1. Purpose
 
-The authentication capability's supported cross-layer surface is the package root (the Nuxt layer), `@nuxt4-layers/authentication/contracts`, `@nuxt4-layers/authentication/capability`, `@nuxt4-layers/authentication/presentation` (page text and styling, §11), `@nuxt4-layers/authentication/tailwind.css` (a Tailwind source declaration, §11), the server composition functions listed in §6, the client surface in §9, and the default pages and components in §11, and the break-glass functions and endpoints in §12.
+The authentication capability's supported cross-layer surface is the package root (the Nuxt layer), `@nuxt-layers/authentication/contracts`, `@nuxt-layers/authentication/capability`, `@nuxt-layers/authentication/presentation` (page text and styling, §11), `@nuxt-layers/authentication/tailwind.css` (a Tailwind source declaration, §11), the server composition functions listed in §6, the client surface in §9, and the default pages and components in §11, and the break-glass functions and endpoints in §12.
 
 The surface has three parts with one-way dependencies, described in [architecture.md](architecture.md): the **contract** (`./contracts`, plain TypeScript), the **core** (server, endpoints, client API and route middleware) and the **presentation** (pages, components, text and styling). Code that only needs to know who is signed in uses the contract and the core, and can turn the presentation off.
 
@@ -94,7 +94,7 @@ Delivery is best effort. A failing sink is reported, but it never changes the ou
 
 A **password reset** and a **sign-in with a backup code** are credential recoveries. Each records, in the layer's own `credential_recovery` table, when the principal's credentials were last recovered and how (`AUTHENTICATION_RECOVERY_METHODS`: `password-reset`, `backup-code`), and then emits `authentication.credentials-recovered` (with `method` `password` or `backup-code` and the recovery method as `reason`).
 
-The record is part of the recovery: if it cannot be written, the reset fails, and a backup-code sign-in is refused (`unavailable`) and its new session removed. The host relays the event to Identity's `recordIdentityCredentialRecovery`, which holds `critical` governance changes the person requests soon afterwards (iam-integration's [recovery process](https://github.com/nuxt4-layers/iam-integration/blob/38e06eb38c10d7415b93d5ab754a5a4a5b4cc910/docs/processes/recovery.md)). Because event delivery is best effort, the host also reconciles from the records with `listAuthenticationCredentialRecoveries` (§7), so a lost event never skips the hold. Records hold only the principal, a time and a method code, and are deleted with the account, or after `retention.recoveryDays` (§13).
+The record is part of the recovery: if it cannot be written, the reset fails, and a backup-code sign-in is refused (`unavailable`) and its new session removed. The host relays the event to Identity's `recordIdentityCredentialRecovery`, which holds `critical` governance changes the person requests soon afterwards (iam-integration's [recovery process](https://github.com/nuxt-layers/iam-integration/blob/38e06eb38c10d7415b93d5ab754a5a4a5b4cc910/docs/processes/recovery.md)). Because event delivery is best effort, the host also reconciles from the records with `listAuthenticationCredentialRecoveries` (§7), so a lost event never skips the hold. Records hold only the principal, a time and a method code, and are deleted with the account, or after `retention.recoveryDays` (§13).
 
 ## 5. Configuration contract: `AuthenticationPolicy`
 
@@ -148,7 +148,7 @@ The host supplies these from a Nitro plugin. See [composition-contract.md](compo
 
 ### 6.1 Identity port
 
-The identity port tells Authentication whose an account is and whether it may hold a session. The host supplies it, normally through iam-integration's reference adapter over Identity's provisioning port ([provisioning process](https://github.com/nuxt4-layers/iam-integration/blob/38e06eb38c10d7415b93d5ab754a5a4a5b4cc910/docs/processes/provisioning.md)). Without it, the engine issues account identifiers and every account is `allowed`, as before.
+The identity port tells Authentication whose an account is and whether it may hold a session. The host supplies it, normally through iam-integration's reference adapter over Identity's provisioning port ([provisioning process](https://github.com/nuxt-layers/iam-integration/blob/38e06eb38c10d7415b93d5ab754a5a4a5b4cc910/docs/processes/provisioning.md)). Without it, the engine issues account identifiers and every account is `allowed`, as before.
 
 | Method | Called | Effect |
 |---|---|---|
@@ -168,7 +168,7 @@ The host also acts on Identity's events with these server helpers (§7), althoug
 
 ### 6.2 Clock
 
-Each member of the IAM suite reads the current time from a clock port the host may supply ([iam-integration's architecture §7](https://github.com/nuxt4-layers/iam-integration/blob/e986245d746507bf7093ca203e346ab1b571e3a8/docs/architecture.md#7-time)). Here it is `provideAuthenticationClock({ now(): Date })`; `useAuthenticationClock()` returns it, or the system clock when the host supplies none. The host supplies the same clock to every member, or none, because times cross members: the authentication time Authentication records is judged against Identity's safety periods.
+Each member of the IAM suite reads the current time from a clock port the host may supply ([iam-integration's architecture §7](https://github.com/nuxt-layers/iam-integration/blob/e986245d746507bf7093ca203e346ab1b571e3a8/docs/architecture.md#7-time)). Here it is `provideAuthenticationClock({ now(): Date })`; `useAuthenticationClock()` returns it, or the system clock when the host supplies none. The host supplies the same clock to every member, or none, because times cross members: the authentication time Authentication records is judged against Identity's safety periods.
 
 | Time | Clock |
 |---|---|
@@ -196,7 +196,7 @@ These are auto-imported into the host's server code:
 | `provisionAuthenticationBreakGlass({ identityId, address, correlationId })` | Creates a break-glass identity's passkey-only account and returns `{ enrolmentToken, expiresAt }` (§12). Operator function: server-only, never an endpoint. |
 | `rotateAuthenticationBreakGlass({ identityId, correlationId })` | Deletes the break-glass account's passkeys, ends its sessions, replaces any outstanding token and returns a new `{ enrolmentToken, expiresAt }` (§12). Server-only. |
 | `runAuthenticationMaintenance({ limit? })` | Ends expired service credentials and warns of expiring ones (§14), applies the retention schedules (§13) and returns `{ retention, serviceCredentials: { expired, expiring } }`. Server-only: the host schedules it, never an endpoint. |
-| `exportAuthenticationData({ principalId, correlationId })` | Authentication's part of a data-subject access request (`AuthenticationDataExport`), or `null` without an account: the sign-in identifier and whether it was verified, whether a password is set, linked providers, passkeys (name, when added, whether backed up), whether TOTP is enrolled and how many backup codes remain, the sessions in force (times and a coarse client description) and the latest credential recovery. Never a password hash, secret, code, key, token or IP address, and no profile data, which is Profile's. Server-only: the host calls it through iam-integration's coordination adapter, for Profile, which assembles the archive ([data-subject requests](https://github.com/nuxt4-layers/iam-integration/blob/3fb6866e0b6b7abbdf599ea06df9d4b8508482f5/docs/processes/data-subject-requests.md)). |
+| `exportAuthenticationData({ principalId, correlationId })` | Authentication's part of a data-subject access request (`AuthenticationDataExport`), or `null` without an account: the sign-in identifier and whether it was verified, whether a password is set, linked providers, passkeys (name, when added, whether backed up), whether TOTP is enrolled and how many backup codes remain, the sessions in force (times and a coarse client description) and the latest credential recovery. Never a password hash, secret, code, key, token or IP address, and no profile data, which is Profile's. Server-only: the host calls it through iam-integration's coordination adapter, for Profile, which assembles the archive ([data-subject requests](https://github.com/nuxt-layers/iam-integration/blob/3fb6866e0b6b7abbdf599ea06df9d4b8508482f5/docs/processes/data-subject-requests.md)). |
 
 Every protected host operation MUST call `requireAuthenticatedPrincipal` (or pass the principal to Authorization). Route middleware is not a security boundary.
 
@@ -339,7 +339,7 @@ The presentation is optional. It depends only on the contract and the client sur
 
 ```ts
 export default defineNuxtConfig({
-  extends: ['@nuxt4-layers/authentication'],
+  extends: ['@nuxt-layers/authentication'],
   authentication: {
     presentation: true,                    // false: core only; no pages, components or presentation auto-imports
     pages: {
@@ -379,11 +379,11 @@ Registered with the `Authentication` prefix (when `presentation` is on), for hos
 The components use only `SemanticPresentationTheme` utilities: the `bg-fill-*`, `text-pen-*`, `border-edge-*`, `divide-edge-*` and `outline-edge-*` colour roles and states, and Theme Manager's text, weight, radius and spacing scales. No utility falls back to Tailwind's own defaults. A host composing Theme Manager adds the layer's sources to its own Tailwind entry so the utilities are generated:
 
 ```css
-@import "@nuxt4-layers/theme-manager/presentation.css";
-@import "@nuxt4-layers/authentication/tailwind.css";
+@import "@nuxt-layers/theme-manager/presentation.css";
+@import "@nuxt-layers/authentication/tailwind.css";
 ```
 
-The components follow Theme Manager's [Semantic Presentation Guide](https://github.com/nuxt4-layers/theme-manager/blob/master/docs/semantic-presentation-guide.md): tokens are chosen by meaning, and the Fill, Pen and Edge of one surface or control share a role and a state and change state together (hover, active and disabled). Text without a fill of its own sits on the card, `fill-base-default`. Links are link-role surfaces (`pen-link` on `fill-link`, underlined), and the keyboard focus indicator is the card's own edge in its active state. Components never set Theme Manager's private `--ui-*` or `--api-*` variables, and neither should a host: a theme that falls short is corrected in its Theme Definition.
+The components follow Theme Manager's [Semantic Presentation Guide](https://github.com/nuxt-layers/theme-manager/blob/master/docs/semantic-presentation-guide.md): tokens are chosen by meaning, and the Fill, Pen and Edge of one surface or control share a role and a state and change state together (hover, active and disabled). Text without a fill of its own sits on the card, `fill-base-default`. Links are link-role surfaces (`pen-link` on `fill-link`, underlined), and the keyboard focus indicator is the card's own edge in its active state. Components never set Theme Manager's private `--ui-*` or `--api-*` variables, and neither should a host: a theme that falls short is corrected in its Theme Definition.
 
 Beyond Theme Manager's same-role guarantees, the components use these deliberate pairings, which a host's theme must keep at WCAG 2.2 AA in light and dark mode:
 
@@ -455,7 +455,7 @@ A passkey sign-in gives an aal2, phishing-resistant session, which Identity's br
 
 ## 13. Retention
 
-Authentication's schedules under iam-integration's [retention process](https://github.com/nuxt4-layers/iam-integration/blob/cf0c5be70e162a7a1d426298cf4f13319667caea/docs/processes/retention.md). `runAuthenticationMaintenance()`, which the host schedules, deletes past the policy's periods (`AUTHENTICATION_RETENTION_BOUNDS` gives each default and its bounds):
+Authentication's schedules under iam-integration's [retention process](https://github.com/nuxt-layers/iam-integration/blob/cf0c5be70e162a7a1d426298cf4f13319667caea/docs/processes/retention.md). `runAuthenticationMaintenance()`, which the host schedules, deletes past the policy's periods (`AUTHENTICATION_RETENTION_BOUNDS` gives each default and its bounds):
 
 | Kind | From | Default | Bounds | Paused by |
 |---|---|---|---|---|
@@ -474,13 +474,13 @@ Authentication's schedules under iam-integration's [retention process](https://g
 
 ## 14. Service identities
 
-A service identity is software acting on a group's behalf (iam-integration's [service identities process](https://github.com/nuxt4-layers/iam-integration/blob/69eb3df32eed2a62257e711243976cbc268c1b62/docs/processes/service-identities.md)). Identity holds it, owned by a group and safely named; Authentication holds its machine credentials and authenticates it; Authorisation decides what it may do from its memberships. It has no sign-in identifier, password, passkey, session or personal data here.
+A service identity is software acting on a group's behalf (iam-integration's [service identities process](https://github.com/nuxt-layers/iam-integration/blob/69eb3df32eed2a62257e711243976cbc268c1b62/docs/processes/service-identities.md)). Identity holds it, owned by a group and safely named; Authentication holds its machine credentials and authenticates it; Authorisation decides what it may do from its memberships. It has no sign-in identifier, password, passkey, session or personal data here.
 
 ### Credentials
 
 - **Kinds** (`AUTHENTICATION_SERVICE_CREDENTIAL_KINDS`): a **client secret**, 32 random bytes (base64url), returned once and stored only as an HMAC-SHA-256 digest keyed from the layer's secret for this purpose; or a **public key**, a public JWK registered by the administrator for signed assertions (`private_key_jwt`, RFC 7523): `ES256` on P-256 or `EdDSA` on Ed25519, nothing else. A key with any private member, or a point off its curve, is refused. Only the public members and the RFC 7638 thumbprint are stored.
 - **Lifetime**: `serviceCredentials.credentialDays` (90 days by default, 1–365). At most two are active per identity (`AUTHENTICATION_SERVICE_CREDENTIALS_ACTIVE_MAX`), counted under a per-identity lock, so a new one can be rolled out before the old is revoked; the same key is never registered twice.
-- **Who manages them**: a signed-in person, never a service, whom the host's service-governance port allows now. The port is normally iam-integration's `authenticationServiceGovernanceFromIdentity` ([adapters](https://github.com/nuxt4-layers/iam-integration/blob/69eb3df32eed2a62257e711243976cbc268c1b62/docs/adapters.md#service-identities)): Identity answers true only for an active service identity whose owning group's `identity.service-identities:manage` the person holds. Without the port, or when it says no, `forbidden`, whether or not the identity exists; when it fails, `unavailable`. Issuing and revoking also need a phishing-resistant session (a passkey) authenticated within the policy's `reauthentication.maxAgeSeconds`, at most 15 minutes. No second approver: the owners are told instead.
+- **Who manages them**: a signed-in person, never a service, whom the host's service-governance port allows now. The port is normally iam-integration's `authenticationServiceGovernanceFromIdentity` ([adapters](https://github.com/nuxt-layers/iam-integration/blob/69eb3df32eed2a62257e711243976cbc268c1b62/docs/adapters.md#service-identities)): Identity answers true only for an active service identity whose owning group's `identity.service-identities:manage` the person holds. Without the port, or when it says no, `forbidden`, whether or not the identity exists; when it fails, `unavailable`. Issuing and revoking also need a phishing-resistant session (a passkey) authenticated within the policy's `reauthentication.maxAgeSeconds`, at most 15 minutes. No second approver: the owners are told instead.
 - **Notices**: `authentication.service-credential-issued` and `-revoked` (with `actorId`), and, from maintenance, `-expiring` once 14 days before expiry (`AUTHENTICATION_SERVICE_CREDENTIAL_WARNING_DAYS`) and `-revoked` with `endedHow: 'expired'` when it ends. The host relays them through iam-integration's `createServiceCredentialNoticeHandler` to the owning group's owners. Notices are best effort; listing the credentials shows the truth.
 
 ### The token endpoint

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Default page provided by @nuxt4-layers/authentication. Disable with authentication.pages.enabled = false. */
+/** Default page provided by @nuxt-layers/authentication. Disable with authentication.pages.enabled = false. */
 
 const { t, locale } = useAuthenticationText()
 useHead({ title: t('authentication.breakGlass.title'), htmlAttrs: { lang: locale } })

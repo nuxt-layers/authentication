@@ -1,6 +1,6 @@
 # Architecture
 
-`@nuxt4-layers/authentication` is one package with three parts. Each part has one job, and dependencies run one way only:
+`@nuxt-layers/authentication` is one package with three parts. Each part has one job, and dependencies run one way only:
 
 ```text
             ┌──────────────────────────┐
@@ -22,9 +22,9 @@ Presentation also uses the contract directly (types and pure helpers). Nothing p
 
 | Part | Directories | Public surface | May depend on |
 |---|---|---|---|
-| **Contract** | `contracts/`, `shared/` | `@nuxt4-layers/authentication/contracts` | `zod` only. No Nuxt, Vue, h3, server or engine code |
+| **Contract** | `contracts/`, `shared/` | `@nuxt-layers/authentication/contracts` | `zod` only. No Nuxt, Vue, h3, server or engine code |
 | **Core** | `server/`, `app/`, `nuxt.config.ts` | `/api/authentication/*`, `get/requireAuthenticatedPrincipal` and the `provide*` server functions, `useAuthentication()`, `useAuthenticationPublicPolicy()`, the `authenticated`, `guest` and `authentication-signed-in` middleware, `authentication.routes` | The contract, and its private engine (Better Auth), database and HTTP libraries |
-| **Presentation** | `presentation/`, `modules/presentation.ts`, `tailwind.css` | The default pages, the `Authentication*` components, `useAuthenticationText()`, `useAuthenticationForm()`, `authenticationClasses`, `@nuxt4-layers/authentication/presentation` (text catalogue and classes) | The contract, the core's client API (`useAuthentication()`, `useAuthenticationPublicPolicy()`), Vue and UI libraries (`uqr`) |
+| **Presentation** | `presentation/`, `modules/presentation.ts`, `tailwind.css` | The default pages, the `Authentication*` components, `useAuthenticationText()`, `useAuthenticationForm()`, `authenticationClasses`, `@nuxt-layers/authentication/presentation` (text catalogue and classes) | The contract, the core's client API (`useAuthentication()`, `useAuthenticationPublicPolicy()`), Vue and UI libraries (`uqr`) |
 
 What each part means for the code that uses it:
 

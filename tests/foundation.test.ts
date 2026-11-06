@@ -30,8 +30,8 @@ describe('Authentication repository foundation', () => {
   })
 
   it('keeps Theme Manager a development dependency only (no runtime package dependency)', () => {
-    expect(pkg.dependencies).not.toHaveProperty('@nuxt4-layers/theme-manager')
-    expect(pkg.devDependencies['@nuxt4-layers/theme-manager']).toMatch(/^git\+https:\/\/github\.com\/.+#[0-9a-f]{40}$/)
+    expect(pkg.dependencies).not.toHaveProperty('@nuxt-layers/theme-manager')
+    expect(pkg.devDependencies['@nuxt-layers/theme-manager']).toMatch(/^git\+https:\/\/github\.com\/.+#[0-9a-f]{40}$/)
   })
 
   it('locks Git dependencies over HTTPS, so installs need no SSH key or token', () => {

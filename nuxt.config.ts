@@ -1,5 +1,5 @@
 /**
- * Nuxt layer entry point for `@nuxt4-layers/authentication`.
+ * Nuxt layer entry point for `@nuxt-layers/authentication`.
  *
  * Hosts compose this layer by package name from `extends` and supply the
  * required ports from a Nitro plugin. See docs/composition-contract.md.
