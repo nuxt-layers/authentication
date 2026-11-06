@@ -1,12 +1,12 @@
 # Security policy
 
-`@nuxt4-layers/authentication` decides who is signed in, so we treat security
+`@nuxt-layers/authentication` decides who is signed in, so we treat security
 reports as our highest priority.
 
 ## Reporting a vulnerability
 
 **Do not open a public issue, discussion or pull request.** Report privately
-through GitHub: [Security → Report a vulnerability](https://github.com/nuxt4-layers/authentication/security/advisories/new).
+through GitHub: [Security → Report a vulnerability](https://github.com/nuxt-layers/authentication/security/advisories/new).
 
 Please include the affected version or commit, the impact, and the steps or a
 proof of concept to reproduce it. Never include real users' credentials or

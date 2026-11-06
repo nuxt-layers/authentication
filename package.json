@@ -1,5 +1,5 @@
 {
-  "name": "@nuxt4-layers/authentication",
+  "name": "@nuxt-layers/authentication",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nuxt4-layers/authentication"
+    "url": "https://github.com/nuxt-layers/authentication"
   },
   "exports": {
     ".": "./nuxt.config.ts",
@@ -55,7 +55,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@nuxt/test-utils": "^4.3.3",
-    "@nuxt4-layers/theme-manager": "git+https://github.com/nuxt4-layers/theme-manager.git#3f928bcf80bd6e32e0aa991fe0115096a1fe6280",
+    "@nuxt-layers/theme-manager": "github:nuxt-layers/theme-manager#master",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.6",

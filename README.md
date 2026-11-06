@@ -1,14 +1,14 @@
-# @nuxt4-layers/authentication
+# @nuxt-layers/authentication
 
 > **AI-Driven Development**
 >
-> This repository is part of [Nuxt 4 Layers](https://github.com/nuxt4-layers), an experimental, AI-driven software engineering initiative.
+> This repository is part of [Nuxt Layers](https://github.com/nuxt-layers), an experimental, AI-driven software engineering initiative.
 >
 > AI performs the principal architecture, development, testing, security assessment and documentation activities under human direction. The project owner retains authority over requirements, governance, acceptance and releases.
 >
 > **Our objective is to demonstrate that disciplined, specification-led AI development can deliver secure, maintainable, standards-compliant, production-quality open-source software.**
 >
-> All contributions are subject to the same engineering standards, quality controls and repository policies, regardless of origin. See the [AI development methodology](https://github.com/nuxt4-layers/platform-architecture/blob/master/AI_DEVELOPMENT.md).
+> All contributions are subject to the same engineering standards, quality controls and repository policies, regardless of origin. See the [AI development methodology](https://github.com/nuxt-layers/platform-architecture/blob/master/AI_DEVELOPMENT.md).
 
 
 Nuxt 4 **foundation** capability that establishes **who has signed in** and manages the secure lifecycle of the authenticated session.
@@ -33,11 +33,11 @@ Authentication is **tenant-agnostic**. It publishes one fact, the `Authenticated
 ## Public surface
 
 ```text
-@nuxt4-layers/authentication              Nuxt layer (compose with extends)
-@nuxt4-layers/authentication/contracts    Types, error codes, events, policy, port interfaces
-@nuxt4-layers/authentication/capability   Capability manifest
-@nuxt4-layers/authentication/presentation  Page text catalogue and styling classes
-@nuxt4-layers/authentication/tailwind.css  Tailwind sources for the default pages
+@nuxt-layers/authentication              Nuxt layer (compose with extends)
+@nuxt-layers/authentication/contracts    Types, error codes, events, policy, port interfaces
+@nuxt-layers/authentication/capability   Capability manifest
+@nuxt-layers/authentication/presentation  Page text catalogue and styling classes
+@nuxt-layers/authentication/tailwind.css  Tailwind sources for the default pages
 ```
 
 The layer has three parts with one-way dependencies: the **contract** (plain TypeScript), the **core** (server, endpoints, client API, middleware) and an optional **presentation** (pages, components, text, styling) that uses only the contract and the client API. See [docs/architecture.md](docs/architecture.md).
@@ -55,19 +55,19 @@ Every other path is private. See [docs/contracts.md](docs/contracts.md).
 
 ## Installation
 
-Install as a Git-backed package dependency **pinned to a tag or commit**, then extend it by package name:
+Install as a Git-backed package dependency **following `master`** (ADR-0008: there are no release tags until formal releases begin), then extend it by package name:
 
 ```jsonc
 // package.json
 "dependencies": {
-  "@nuxt4-layers/authentication": "github:nuxt4-layers/authentication#<tag-or-commit-sha>"
+  "@nuxt-layers/authentication": "github:nuxt-layers/authentication#master"
 }
 ```
 
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
-  extends: ['@nuxt4-layers/authentication'],
+  extends: ['@nuxt-layers/authentication'],
 })
 ```
 
@@ -118,7 +118,7 @@ Pages are registered at `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-pass
 
 ```ts
 export default defineNuxtConfig({
-  extends: ['@nuxt4-layers/authentication', '@nuxt4-layers/theme-manager'],
+  extends: ['@nuxt-layers/authentication', '@nuxt-layers/theme-manager'],
   authentication: { pages: { paths: { signIn: '/login' } } },   // or { enabled: false }
 })
 ```
@@ -128,13 +128,13 @@ A host with its own design sets `authentication: { presentation: false }`: no pa
 They are styled only through the `SemanticPresentationTheme` vocabulary (Theme Manager), an optional capability. Add the layer's sources to your Tailwind entry so the utilities are generated:
 
 ```css
-@import "@nuxt4-layers/theme-manager/presentation.css";
-@import "@nuxt4-layers/authentication/tailwind.css";
+@import "@nuxt-layers/theme-manager/presentation.css";
+@import "@nuxt-layers/authentication/tailwind.css";
 ```
 
 Your theme must meet the contrast pairings in [docs/contracts.md](docs/contracts.md) §11. Override text or add locales in `app.config.ts` under `authentication.messages`.
 
-See [docs/composition-contract.md](docs/composition-contract.md) for the full contract, including persistence ([ADR-0002](https://github.com/nuxt4-layers/platform-architecture/blob/main/docs/decisions/ADR-0002-composition-supplied-persistence-and-capability-owned-schemas.md)) and configuration.
+See [docs/composition-contract.md](docs/composition-contract.md) for the full contract, including persistence ([ADR-0002](https://github.com/nuxt-layers/platform-architecture/blob/main/docs/decisions/ADR-0002-composition-supplied-persistence-and-capability-owned-schemas.md)) and configuration.
 
 ## Configuration
 
@@ -167,7 +167,7 @@ pnpm build:playground # production build of the playground
 pnpm test:e2e         # Playwright + axe against the built playground (needs AUTHENTICATION_TEST_DATABASE_URL)
 ```
 
-The playground composes [Theme Manager](https://github.com/nuxt4-layers/theme-manager) v0.1.0, pinned by its release commit as a devDependency. Hosts installing the layer from Git do not get it: the package has no install-time scripts, so only its runtime dependencies are installed.
+The playground composes [Theme Manager](https://github.com/nuxt-layers/theme-manager) as a devDependency following its latest `master` (ADR-0008). Hosts installing the layer from Git do not get it: the package has no install-time scripts, so only its runtime dependencies are installed.
 
 Database and end-to-end suites run against a **disposable local PostgreSQL**, never a hosted one. Point `AUTHENTICATION_TEST_DATABASE_URL` at an admin connection (for example `postgres://postgres@localhost:5432/postgres`); each suite creates and drops its own database. Without it those suites are skipped locally and **fail in CI**.
 

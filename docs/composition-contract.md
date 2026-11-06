@@ -8,9 +8,9 @@ This document defines how a host Nuxt application composes the authentication ca
 
 Install through the package manager and compose the package root with Nuxt `extends`, following the Layer Consumption Workflow:
 
-- during early development, use a Git-backed dependency **pinned to a tag or commit SHA** in `package.json`. The package runs no install-time scripts, so only its runtime dependencies are installed;
-- commit the lockfile and install with `--frozen-lockfile` in CI;
-- never follow a mutable default branch in production.
+- until formal releases begin, use a Git-backed dependency **following `master`** (`github:nuxt-layers/authentication#master`, ADR-0008) in `package.json`. The package runs no install-time scripts, so only its runtime dependencies are installed;
+- commit the lockfile and install with `--frozen-lockfile` in CI, so every build installs the commit CI tested;
+- refresh the lockfile whenever `master` advances.
 
 Compose authentication as a **peer** of other capabilities. It does not extend, and is not extended by, Identity, Authorization, UI or Theme Manager.
 
@@ -44,7 +44,7 @@ The host application:
 - serves the application from a registrable domain (not an IP address) so passkeys work; the passkey relying-party ID is the base URL's host;
 - for each identity provider it enables, registers `<base URL>/api/authentication/federation/callback/<id>` as the redirect URI and supplies the client ID and secret through secret management (`NUXT_AUTHENTICATION_PROVIDERS_<ID>_CLIENT_ID` / `_CLIENT_SECRET`; Microsoft also takes `_TENANT_ID`; the generic OIDC provider takes `_DISCOVERY_URL` and an optional `_NAME`);
 - keeps the default pages (configured under `authentication.pages` in `nuxt.config.ts`), or disables them (`pages.enabled: false`) or the whole presentation (`presentation: false`) and provides its own pages at the configured routes, including `routes.mfa`, where sessions below the required level enrol a second factor or step up;
-- when using the default pages with Theme Manager, adds `@import "@nuxt4-layers/authentication/tailwind.css";` after Theme Manager's `presentation.css` in its Tailwind entry, and composes a theme whose pairings meet the contrast requirements in `docs/contracts.md` (Styling), customising it through Theme Manager rather than by overriding its private `--ui-*` variables;
+- when using the default pages with Theme Manager, adds `@import "@nuxt-layers/authentication/tailwind.css";` after Theme Manager's `presentation.css` in its Tailwind entry, and composes a theme whose pairings meet the contrast requirements in `docs/contracts.md` (Styling), customising it through Theme Manager rather than by overriding its private `--ui-*` variables;
 - overrides or translates page text through `app.config.ts` (`authentication.messages`);
 - sets `NUXT_AUTHENTICATION_TRUST_PROXY=true` only when a reverse proxy overwrites `X-Forwarded-For`, so per-client throttling sees real client addresses;
 - for break-glass accounts (ADR-0007), runs `provisionAuthenticationBreakGlass` from its operator procedure after Identity's `provisionIdentityBreakGlass`, and `rotateAuthenticationBreakGlass` on Identity's `break-glass.used`; hands each returned enrolment token to the operator as `<base URL><routes.breakGlassEnrol>#<token>` over a channel it trusts, never logging it; and never exposes either function over HTTP;
@@ -108,7 +108,7 @@ Driver and engine exceptions are translated at the boundary. They never become u
 
 A consuming application must test its own combination of:
 
-- the pinned authentication version;
+- the authentication commit its lockfile records;
 - its database, mailer and event-sink adapters;
 - its route exposure, and middleware placement for protected pages;
 - its Identity and Authorization adapters that consume `AuthenticatedPrincipal`.

@@ -1,6 +1,6 @@
 # Repository security configuration
 
-The target configuration for `nuxt4-layers/authentication` as a public
+The target configuration for `nuxt-layers/authentication` as a public
 repository that accepts outside contributions. Files in the repository carry
 part of it; the rest is GitHub settings that only an admin can change, listed
 here as a checklist. Re-check after any change to the organisation or a new
@@ -17,7 +17,7 @@ vulnerability disclosed publicly before a fix.
 |---|---|---|
 | P1 | History contains no secrets (scanned all 16 commits for tokens, keys, credentials) | Clean. The only credential is the disposable CI PostgreSQL password |
 | P2 | Close superseded pull request #6 and delete its branch (`claude/charming-hopper-boizun`) | Open |
-| P3 | Theme Manager dependency reachable by outside contributors | Done: `nuxt4-layers/theme-manager` is public; CI installs it without a token |
+| P3 | Theme Manager dependency reachable by outside contributors | Done: `nuxt-layers/theme-manager` is public; CI installs it without a token |
 | P4 | Review open issues and pull requests: they become public too | 1 open issue |
 | P5 | Delete the `NUXT4_LAYERS_READ_TOKEN` repository secret and revoke the token: CI no longer uses it | Open |
 
@@ -42,7 +42,7 @@ While there is a single maintainer, the approval requirement blocks your own pul
 
 **Settings → Actions → General**
 
-- [ ] Actions permissions: *Allow nuxt4-layers, and select non-nuxt4-layers, actions*; allow actions created by GitHub; allow `pnpm/action-setup@*`; tick *Require actions to be pinned to a full-length commit SHA*.
+- [ ] Actions permissions: *Allow nuxt-layers, and select non-nuxt-layers, actions*; allow actions created by GitHub (no third-party actions: CI gets pnpm through Corepack); tick *Require actions to be pinned to a full-length commit SHA*.
 - [ ] *Fork pull request workflows from outside collaborators*: **Require approval for all external contributors**.
 - [ ] Workflow permissions: **Read repository contents and packages permissions**; untick *Allow GitHub Actions to create and approve pull requests*.
 - [ ] Artifact and log retention: 30 days or less.

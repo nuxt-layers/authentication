@@ -1,4 +1,4 @@
-# Legacy Layer Review: `nuxt4-layers/legacy-authentication`
+# Legacy Layer Review: `nuxt-layers/legacy-authentication`
 
 **Reviewed:** 2026-10-03, commit `25d6050` on `master` (35 files, about 5 000 lines).
 **Purpose:** Record what to keep and what to leave behind when building this layer. No legacy source is copied into this repository.
