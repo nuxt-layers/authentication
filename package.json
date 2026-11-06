@@ -27,6 +27,7 @@
     "LICENSE",
     "modules",
     "presentation",
+    "public",
     "tailwind.css"
   ],
   "scripts": {
