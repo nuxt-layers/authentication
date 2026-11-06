@@ -5,6 +5,7 @@ All notable changes to `@nuxt-layers/authentication`. The package follows [seman
 ## Unreleased
 
 - Moved to the `nuxt-layers` organisation.
+- Theme Manager follows its latest `master` instead of a pinned release commit.
 - The layer's own tests pass on Windows as well as on Linux and macOS: the paths they compare with import specifiers and routes are written with `/` on every platform (`tests/support/paths.ts`). On Windows the contract, architecture and endpoint tests used to fail, or check nothing.
 
 ## 1.0.0 (2026-10-11)
