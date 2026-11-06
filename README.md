@@ -55,12 +55,12 @@ Every other path is private. See [docs/contracts.md](docs/contracts.md).
 
 ## Installation
 
-Install as a Git-backed package dependency **pinned to a tag or commit**, then extend it by package name:
+Install as a Git-backed package dependency **following `master`** (ADR-0008: there are no release tags until formal releases begin), then extend it by package name:
 
 ```jsonc
 // package.json
 "dependencies": {
-  "@nuxt-layers/authentication": "github:nuxt-layers/authentication#<tag-or-commit-sha>"
+  "@nuxt-layers/authentication": "github:nuxt-layers/authentication#master"
 }
 ```
 

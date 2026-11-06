@@ -8,9 +8,9 @@ This document defines how a host Nuxt application composes the authentication ca
 
 Install through the package manager and compose the package root with Nuxt `extends`, following the Layer Consumption Workflow:
 
-- during early development, use a Git-backed dependency **pinned to a tag or commit SHA** in `package.json`. The package runs no install-time scripts, so only its runtime dependencies are installed;
-- commit the lockfile and install with `--frozen-lockfile` in CI;
-- never follow a mutable default branch in production.
+- until formal releases begin, use a Git-backed dependency **following `master`** (`github:nuxt-layers/authentication#master`, ADR-0008) in `package.json`. The package runs no install-time scripts, so only its runtime dependencies are installed;
+- commit the lockfile and install with `--frozen-lockfile` in CI, so every build installs the commit CI tested;
+- refresh the lockfile whenever `master` advances.
 
 Compose authentication as a **peer** of other capabilities. It does not extend, and is not extended by, Identity, Authorization, UI or Theme Manager.
 
@@ -108,7 +108,7 @@ Driver and engine exceptions are translated at the boundary. They never become u
 
 A consuming application must test its own combination of:
 
-- the pinned authentication version;
+- the authentication commit its lockfile records;
 - its database, mailer and event-sink adapters;
 - its route exposure, and middleware placement for protected pages;
 - its Identity and Authorization adapters that consume `AuthenticatedPrincipal`.
