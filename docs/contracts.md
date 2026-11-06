@@ -5,7 +5,7 @@
 
 ## 1. Purpose
 
-The authentication capability's supported cross-layer surface is the package root (the Nuxt layer), `@nuxt-layers/authentication/contracts`, `@nuxt-layers/authentication/capability`, `@nuxt-layers/authentication/presentation` (page text and styling, §11), `@nuxt-layers/authentication/tailwind.css` (a Tailwind source declaration, §11), the server composition functions listed in §6, the client surface in §9, and the default pages and components in §11, and the break-glass functions and endpoints in §12.
+The authentication capability's supported cross-layer surface is the package root (the Nuxt layer), `@nuxt-layers/authentication/contracts`, `@nuxt-layers/authentication/capability`, `@nuxt-layers/authentication/presentation` (page text and styling, §11), `@nuxt-layers/authentication/tailwind.css` (a Tailwind source declaration, §11), the server composition functions listed in §6, the client surface in §9, and the default pages and components in §11, the capability logo (§11), and the break-glass functions and endpoints in §12.
 
 The surface has three parts with one-way dependencies, described in [architecture.md](architecture.md): the **contract** (`./contracts`, plain TypeScript), the **core** (server, endpoints, client API and route middleware) and the **presentation** (pages, components, text and styling). Code that only needs to know who is signed in uses the contract and the core, and can turn the presentation off.
 
@@ -395,6 +395,10 @@ Beyond Theme Manager's same-role guarantees, the components use these deliberate
 | `edge-base-active` on `fill-base-default` | Keyboard focus indicator | 3:1 |
 
 `tests/presentation.test.ts` enforces the pairing rules and compiles every class against Theme Manager's public `presentation.css` to catch Tailwind defaults, and the end-to-end suite checks rendered contrast with Theme Manager's default theme, unmodified.
+
+### Logo
+
+The layer owns `public/authentication-logo.png`, and the package ships its `public` directory. Composed as a Nuxt layer, the host serves it at `/authentication-logo.png` (subject to its public asset base URL and to a host asset with the same name). The image carries the words "Nuxt Layers Authentication". Beside the visible text "Authentication" the logo is decorative: use `alt=""`. Shown alone, it is the only label: use `alt="Nuxt Layers Authentication"`. Hosts display it from that URL; they never import a private package path or copy the image into another repository.
 
 ### Messages
 

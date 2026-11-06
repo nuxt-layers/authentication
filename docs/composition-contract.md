@@ -58,6 +58,7 @@ The authentication layer:
 - owns the `authentication` database schema and its migrations;
 - owns abuse controls (throttling, lockout, enumeration resistance);
 - publishes `AuthenticatedPrincipal` and `AuthenticationEvent`;
+- owns its logo, served to the host at `/authentication-logo.png` ([contracts.md §11](contracts.md));
 - fails closed when a required port is absent.
 
 ## 6. Persistence (ADR-0002)
