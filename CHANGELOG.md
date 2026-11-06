@@ -6,6 +6,7 @@ All notable changes to `@nuxt-layers/authentication`. The package follows [seman
 
 - Moved to the `nuxt-layers` organisation.
 - Theme Manager follows its latest `master` instead of a pinned release commit, and hosts install Authentication from `master` (ADR-0008).
+- Development and CI use Node.js 26.13.0 and pnpm 12.16.1 through Corepack (ADR-0013); hosts still need Node.js 22 or later. CI caches pnpm's store.
 - The layer ships its logo, served to hosts at `/authentication-logo.png`.
 - The layer's own tests pass on Windows as well as on Linux and macOS: the paths they compare with import specifiers and routes are written with `/` on every platform (`tests/support/paths.ts`). On Windows the contract, architecture and endpoint tests used to fail, or check nothing.
 

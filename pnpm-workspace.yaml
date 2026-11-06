@@ -1,5 +1,7 @@
-onlyBuiltDependencies:
-  - "@nuxt-layers/theme-manager"
+# Install scripts run only for packages approved here (docs/threat-model.md T14).
+# esbuild's postinstall checks and links its platform binary.
+allowBuilds:
+  esbuild: true
 
 # Supply-chain hardening (docs/threat-model.md T14).
 # Resolve only versions published at least a day ago; most malicious releases
