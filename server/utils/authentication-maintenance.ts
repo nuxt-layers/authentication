@@ -51,6 +51,9 @@ export async function runAuthenticationMaintenance(input: { limit?: number } = {
     holds: useAuthenticationLegalHolds(),
     limit: input.limit,
   })
+  // Throttle rows hold client IP addresses; one that changes no decision goes.
+  // Operational state, not a record with a retention period, so it is not counted.
+  await runtime.throttle.purgeStale()
   if (Object.values(retention).some(count => count > 0)) {
     await runtime.emit(systemEvent('authentication.retention-applied', null, { counts: retention }))
   }

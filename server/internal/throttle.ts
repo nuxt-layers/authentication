@@ -7,6 +7,8 @@ import { quoteSchema } from '../database/migrations'
  *
  * Accounts are keyed by a hash of the normalised email, so unknown and known
  * accounts are throttled identically and no address is stored in plain text.
+ * Client keys hold the client's IP address, so a row is deleted once it no
+ * longer affects any decision (`purgeStale`).
  */
 
 export type ThrottleKey = `account:${string}` | `client:${string}` | `reset:${string}` | `service:${string}`
@@ -37,6 +39,12 @@ export interface SignInThrottle {
   /** Records a failure. Returns true when this failure triggered a new lockout. */
   recordFailure(key: ThrottleKey, limit: number): Promise<boolean>
   clear(key: ThrottleKey): Promise<void>
+  /**
+   * Deletes every row whose window has passed and whose lockout, if any, has
+   * ended. Such a row changes no decision: `isBlocked` ignores it and the next
+   * failure starts a new window. Returns how many were deleted.
+   */
+  purgeStale(): Promise<number>
 }
 
 export function createSignInThrottle(pool: PostgresPoolLike, schema: string, policy: AuthenticationPolicy['signInThrottle']): SignInThrottle {
@@ -75,6 +83,19 @@ export function createSignInThrottle(pool: PostgresPoolLike, schema: string, pol
 
     async clear(key) {
       await query(`delete from ${table} where "key" = $1`, [key])
+    },
+
+    async purgeStale() {
+      const { rows } = await query(
+        `with gone as (
+           delete from ${table}
+            where "window_started_at" <= now() - make_interval(secs => $1)
+              and ("locked_until" is null or "locked_until" <= now())
+           returning 1)
+         select count(*)::int as "n" from gone`,
+        [policy.windowSeconds],
+      )
+      return Number(rows[0]?.n ?? 0)
     },
   }
 }

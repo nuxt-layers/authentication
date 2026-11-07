@@ -475,6 +475,7 @@ Authentication's schedules under *IAM retention*. `runAuthenticationMaintenance(
 - Before deleting a credential-recovery record, maintenance asks the host's legal-hold port (`provideAuthenticationLegalHolds`, normally iam-integration's `legalHoldsFromMembers` with the `authentication` part, which reads Profile's holds on people). Without the port, or when it fails or answers anything but `false`, the record is kept for the next run. A record recovered again since the run read it is kept.
 - A run reads at most `limit` recovery records (default 1 000, at most 10 000); the rest wait for the next run.
 - A run that deleted anything emits `authentication.retention-applied` with counts by kind (`sessions`, `credentialRecoveries`, `enrolmentTokens`, `verifications`, `serviceTokens`, `serviceCredentials`), never an identifier.
+- Sign-in throttle rows, which hold client IP addresses, are deleted by every run once they no longer affect a decision: their window has passed and any lockout has ended. They are operational state, not records, so they are not counted.
 - Service tokens, from their expiry, and service credentials, from when they were revoked or expired, are kept for `retention.tokenDays`; the counts add `serviceTokens` and `serviceCredentials`.
 - Accounts, credentials and sign-in identifiers have no schedule: they last as long as the account, and go with it (`deleteAuthenticationAccount`, on Identity's `identity.closed`). Authentication holds nothing scoped to a group or tenant, so it takes no part in group deletion or tenant shutdown.
 

@@ -47,13 +47,13 @@ The data classes used below are:
 | `passkey` | Public key, credential ID, name, signature counter, device type, whether backed up, transports and authenticator model (AAGUID) | Personal; public key material | Removed by the person, or the account is deleted |
 | `twoFactor` | The TOTP secret, encrypted with a key from the layer's secret, and backup codes as keyed digests, with failure counts | Secret | TOTP is turned off, or the account is deleted |
 | `totp_last_step` | The last TOTP time step used, to refuse a replay | Operational | The account is deleted |
-| `sign_in_throttle` | Failure counts and lockouts. Keys are a SHA-256 of the email address, a SHA-256 of the service identity, or the client's **IP address in plain text** | Personal (IP address) | Account keys are cleared on a successful sign-in. **No retention schedule**: other rows stay until overwritten (an open item in [PLAN.md](PLAN.md)) |
+| `sign_in_throttle` | Failure counts and lockouts. Keys are a SHA-256 of the email address, a SHA-256 of the service identity, or the client's **IP address in plain text** | Personal (IP address) | Until it no longer affects a decision: its window (`signInThrottle.windowSeconds`, 15 minutes by default) has passed and any lockout has ended. `runAuthenticationMaintenance` then deletes it. Account keys are also cleared on a successful sign-in |
 | `credential_recovery` | Who last recovered their credentials, when, and how (`password-reset` or `backup-code`) | Personal | `retention.recoveryDays` after the recovery (365 by default), and only if the host's legal-hold port says no hold applies; or the account is deleted |
 | `break_glass_account` | Which accounts are break-glass, and when they were provisioned | Operational | The account is deleted |
 | `break_glass_enrolment` | An enrolment token's HMAC-SHA-256 digest, its expiry and the pending challenge | Secret | Used: deleted at once. Expired: `retention.tokenDays` after expiry |
 | `service_credential` | A service identity's secret as a keyed digest, or its public key and thumbprint, with times and how it ended | Secret; public key material | `retention.tokenDays` after it is revoked or expires; or the identity is closed |
 | `service_token` | A service token's keyed digest, its identity, method and times | Secret | `retention.tokenDays` after expiry; or the identity is closed |
-| `service_assertion` | Each signed assertion's `jti`, used once | Operational | **Unverified:** past its expiry, removal is not confirmed |
+| `service_assertion` | Each signed assertion's `jti`, used once | Operational | Its expiry (at most 5 minutes): expired rows are deleted whenever the token endpoint checks an assertion; or the identity is closed |
 | `schema_migration` | Which migrations have run | Operational | Always |
 
 Deleting an account (`deleteAuthenticationAccount`, on Identity's `identity.closed`) removes its sign-in identifier, credentials and sessions together. `runAuthenticationMaintenance`, which the host schedules, applies the periods above (*IAM retention*).
