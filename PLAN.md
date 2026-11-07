@@ -1,6 +1,6 @@
 # Plan
 
-> **In short:** phases 1–8 are done; releases are suspended (ADR-0008), so next come the version reset and ADR-0012 composition. Each phase lands as its own pull request with tests and keeps `pnpm check` green.
+> **In short:** phases 1–8 and the version reset are done; releases are suspended (ADR-0008), so ADR-0012 composition comes next. Each phase lands as its own pull request with tests and keeps `pnpm check` green.
 
 External documents are named by their entry in [RESOURCES.md](RESOURCES.md).
 
@@ -17,8 +17,8 @@ External documents are named by their entry in [RESOURCES.md](RESOURCES.md).
 | 7. Retention | Authentication's part of the suite's end of life (*IAM retention*): retention periods in the policy, `runAuthenticationMaintenance`, the optional legal-hold port and `authentication.retention-applied`. Nothing per group or tenant, so no disposal | Done |
 | 8. Service identities | Authentication's part of *IAM service identities*: machine credentials, the client-credentials token endpoint, short-lived opaque bearer tokens, the optional service-governance port, notices, suspension, closure, expiry and retention | Done |
 | 9. Release 1.0 | Contract frozen for 1.x and tagged `v1.0.0` | Suspended: releases and tags are suspended until the owner approves a release lifecycle (ADR-0008); the tags are deleted |
-| 10. Version reset | Development metadata back to `0.0.0` in `package.json`, `capability.json` and `CHANGELOG.md` | Next, once the owner agrees |
-| 11. Composition (ADR-0012) | One call in one server plugin; ports in the shared shapes, including `resolveCaller(event) → { tenantId, subjectId \| null, assurance }`; `examples/minimal-host` within the 50-line budget, built and smoke-tested in CI | Planned |
+| 10. Version reset | Development metadata back to `0.0.0` in `package.json`, `capability.json` and `CHANGELOG.md` | Done |
+| 11. Composition (ADR-0012) | One call in one server plugin; ports in the shared shapes, including `resolveCaller(event) → { tenantId, subjectId \| null, assurance }`; `examples/minimal-host` within the 50-line budget, built and smoke-tested in CI | Next |
 
 ## Open items
 

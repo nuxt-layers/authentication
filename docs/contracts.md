@@ -1,7 +1,7 @@
 # Authentication Public Contract
 
 **Contract:** `Authentication`, version `1`
-**Status:** Provisional (pre-1.0). Breaking changes are documented explicitly.
+**Status:** In development on `master` (ADR-0008). Breaking changes are documented explicitly.
 
 ## 1. Purpose
 
@@ -511,4 +511,4 @@ The service sends `Authorization: Bearer <token>` to the host's own routes. `get
 
 ## 15. Versioning
 
-This is contract version 1, provided by package 1.0, and frozen for 1.x. From 1.0 the package follows semantic versioning: a change that breaks the contract (a removed or narrowed type, function, endpoint, event or port, or a stricter rule a host must act on) needs a new contract version and a major release; an addition is a minor release; a fix is a patch. Each release is listed in `CHANGELOG.md`.
+This is contract version 1. Releases are suspended until the owner approves a release lifecycle (ADR-0008): the package version is `0.0.0`, and hosts follow `master`. The contract still changes only explicitly: a change that breaks it (a removed or narrowed type, function, endpoint, event or port, or a stricter rule a host must act on) is documented, tested and recorded in `CHANGELOG.md`, and raises the contract version in `capability.json` and `CONTRACT.md`. Once releases resume, the package follows *Semantic versioning*.

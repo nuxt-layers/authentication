@@ -1,10 +1,11 @@
 # Changelog
 
-All notable changes to `@nuxt-layers/authentication`. The package follows semantic versioning, and contract version 1 is frozen for 1.x.
+All notable changes to `@nuxt-layers/authentication`, newest first. Release versions resume once the owner approves a release lifecycle (ADR-0008); until then the version is `0.0.0`.
 
 ## Unreleased
 
 - Moved to the `nuxt-layers` organisation.
+- Version reset to `0.0.0`: releases and tags are suspended (ADR-0008). The 1.0.0 entry below is history, not a supported release.
 - `runAuthenticationMaintenance` deletes sign-in throttle rows, which hold client IP addresses, once their window has passed and any lockout has ended.
 - Theme Manager follows its latest `master` instead of a pinned release commit, and hosts install Authentication from `master` (ADR-0008).
 - Development and CI use Node.js 26.13.0 and pnpm 12.16.1 through Corepack (ADR-0013); hosts still need Node.js 22 or later. CI caches pnpm's store.
