@@ -54,20 +54,20 @@
     "nuxt": "^4.5.0"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
-    "@nuxt/test-utils": "^4.3.3",
+    "@axe-core/playwright": "^4.14.0",
+    "@nuxt/test-utils": "^4.3.4",
     "@nuxt-layers/theme-manager": "github:nuxt-layers/theme-manager#master",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^24.13.6",
+    "@types/node": "^24.19.2",
     "@types/pg": "^8.23.1",
     "nuxt": "^4.6.2",
-    "oauth2-mock-server": "^9.2.0",
+    "oauth2-mock-server": "^9.3.0",
     "pg": "^8.23.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.3",
-    "vue-tsc": "^3.3.11"
+    "vitest": "^5.0.5",
+    "vue-tsc": "^3.3.14"
   },
   "packageManager": "pnpm@12.16.1",
   "engines": {
